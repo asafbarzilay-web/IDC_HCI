@@ -2,349 +2,330 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IDC HCI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
-    --bg: #F5F4EF;
-    --paper: #FFFFFF;
-    --ink: #3D3929;
-    --ink-soft: #6B6558;
-    --accent: #C15F3C;
-    --accent-soft: #F0E4DC;
-    --border: #E5E2D9;
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #F0EEE6;
+    font-family: ui-sans-serif, -apple-system, 'Segoe UI', system-ui, sans-serif;
+    color: #29261F;
+    -webkit-font-smoothing: antialiased;
   }
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--ink);
+  @keyframes flowIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  @keyframes pop {
+    0% { transform: scale(0.8); opacity: 0; }
+    60% { transform: scale(1.06); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .page {
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 2rem 1rem;
+    padding: 32px;
   }
 
-  .container {
-    width: 100%;
-    max-width: 560px;
-  }
+  .wrap { width: 100%; max-width: 560px; }
 
-  .progress {
+  .progress-rail {
     display: flex;
-    justify-content: center;
-    gap: 0.6rem;
-    margin-bottom: 2rem;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 40px;
   }
 
   .progress-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--border);
-    transition: background 0.25s, transform 0.25s;
+    height: 6px;
+    border-radius: 3px;
+    transition: all 0.3s ease;
+    background: #D8D3C6;
+    width: 12px;
   }
 
   .progress-dot.active {
-    background: var(--accent);
-    transform: scale(1.3);
+    width: 28px;
+    background: #C15F3C;
   }
 
-  .progress-dot.done {
-    background: var(--accent);
-    opacity: 0.5;
+  .progress-spacer { flex: 1; }
+
+  .progress-label {
+    font-size: 13px;
+    color: #8A8578;
+    letter-spacing: 0.02em;
   }
 
-  .card {
-    background: var(--paper);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 2.5rem 2rem;
-    box-shadow: 0 1px 2px rgba(61,57,41,0.04), 0 8px 24px rgba(61,57,41,0.06);
-    text-align: center;
-  }
+  .step { animation: flowIn 0.4s ease both; }
 
-  .step-eyebrow {
-    font-size: 0.78rem;
-    font-weight: 600;
+  .eyebrow {
+    font-size: 13px;
+    font-weight: 500;
+    color: #C15F3C;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 0.6rem;
+    margin-bottom: 12px;
   }
 
   h1 {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 1.6rem;
+    font-family: Newsreader, Georgia, serif;
     font-weight: 400;
-    color: var(--ink);
-    margin-bottom: 2rem;
+    font-size: 40px;
+    line-height: 1.1;
+    margin: 0 0 8px;
     letter-spacing: -0.01em;
   }
 
-  .options {
-    display: flex;
-    justify-content: center;
-    gap: 0.9rem;
-    flex-wrap: wrap;
+  .step-copy {
+    font-size: 16px;
+    color: #6B665A;
+    margin: 0 0 32px;
+    line-height: 1.5;
   }
 
-  .option-btn {
-    width: 84px;
-    height: 84px;
-    border-radius: 16px;
-    border: 1.5px solid var(--border);
-    background: var(--bg);
-    color: var(--ink);
-    font-size: 1.4rem;
-    font-weight: 600;
-    font-family: Georgia, 'Times New Roman', serif;
-    cursor: pointer;
+  .option-grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .option-grid.numbers { grid-template-columns: repeat(3, 1fr); }
+  .option-grid.letters { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .option-grid.shapes { grid-template-columns: repeat(3, 1fr); }
+
+  .option-card {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    transition: border-color 0.15s, background 0.15s, transform 0.1s, box-shadow 0.15s;
+    gap: 8px;
+    aspect-ratio: 1;
+    background: #FAF9F5;
+    border: 1px solid #E0DBCE;
+    border-radius: 16px;
+    cursor: pointer;
+    font-family: inherit;
+    color: #29261F;
+    transition: all 0.18s ease;
+    padding: 0;
   }
 
-  .option-btn:hover {
-    border-color: var(--accent);
-    background: var(--accent-soft);
+  .option-card:hover:not(.selected) {
+    border-color: #C9A491;
+    background: #FCFBF7;
     transform: translateY(-2px);
   }
 
-  .option-btn:active { transform: scale(0.96); }
-
-  .option-btn.selected {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+  .option-card.selected {
+    background: #F6E9E1;
+    border-color: #C15F3C;
+    box-shadow: 0 0 0 3px rgba(193, 95, 60, 0.15);
   }
 
-  .option-btn svg {
-    width: 34px;
-    height: 34px;
-    stroke: var(--ink);
-    fill: none;
-    stroke-width: 2;
-    transition: stroke 0.15s;
+  .option-glyph-text {
+    font-family: Newsreader, Georgia, serif;
+    line-height: 1;
   }
 
-  .option-btn.selected svg { stroke: #fff; }
+  .option-grid.numbers .option-glyph-text { font-size: 44px; }
+  .option-grid.letters .option-glyph-text { font-size: 38px; }
 
-  .nav-row {
+  .shape-glyph.circle { width: 44px; height: 44px; border-radius: 50%; background: #4A463C; }
+  .shape-glyph.square { width: 42px; height: 42px; border-radius: 6px; background: #4A463C; }
+  .shape-glyph.triangle {
+    width: 0; height: 0;
+    border-left: 24px solid transparent;
+    border-right: 24px solid transparent;
+    border-bottom: 42px solid #4A463C;
+  }
+
+  .option-card.selected .shape-glyph.circle,
+  .option-card.selected .shape-glyph.square { background: #C15F3C; }
+  .option-card.selected .shape-glyph.triangle { border-bottom-color: #C15F3C; }
+
+  .shape-label { font-size: 14px; color: #6B665A; }
+
+  .success { text-align: center; animation: flowIn 0.5s ease both; }
+
+  .success-badge {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: #C15F3C;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-top: 2rem;
-  }
-
-  .back-btn {
-    background: none;
-    border: none;
-    color: var(--ink-soft);
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 0.4rem 0.6rem;
-    border-radius: 8px;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .back-btn:hover { background: var(--accent-soft); color: var(--accent); }
-  .back-btn:disabled { visibility: hidden; }
-
-  .next-btn {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    padding: 0.6rem 1.4rem;
-    font-size: 0.88rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s, transform 0.1s, opacity 0.15s;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .next-btn.visible { opacity: 1; pointer-events: auto; }
-  .next-btn:hover { background: #a84f30; }
-  .next-btn:active { transform: scale(0.97); }
-
-  .success-icon {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-  }
-
-  .summary {
-    display: flex;
     justify-content: center;
-    gap: 0.6rem;
-    margin: 1.5rem 0 2rem;
-    flex-wrap: wrap;
+    margin: 0 auto 28px;
+    animation: pop 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) both;
   }
 
-  .summary-pill {
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-size: 0.85rem;
-    font-weight: 600;
-    padding: 0.4rem 0.9rem;
-    border-radius: 999px;
+  .success h1 { font-size: 44px; margin: 0 0 12px; }
+
+  .success-copy {
+    font-size: 17px;
+    color: #6B665A;
+    margin: 0 0 28px;
+    line-height: 1.5;
   }
+
+  .success-copy strong { color: #29261F; font-weight: 500; }
 
   .restart-btn {
-    background: var(--ink);
-    color: #fff;
-    border: none;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    color: #29261F;
+    background: transparent;
+    border: 1px solid #D8D3C6;
     border-radius: 10px;
-    padding: 0.65rem 1.5rem;
-    font-size: 0.88rem;
-    font-weight: 600;
+    padding: 12px 24px;
     cursor: pointer;
-    transition: background 0.15s, transform 0.1s;
+    transition: background 0.15s, border-color 0.15s;
   }
 
-  .restart-btn:hover { background: #2a271b; }
-  .restart-btn:active { transform: scale(0.97); }
+  .restart-btn:hover { background: #E7E3D8; border-color: #C9C3B4; }
 
-  .step { display: none; }
-  .step.active { display: block; }
+  .back-btn {
+    margin-top: 36px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    color: #8A8578;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.15s;
+  }
+
+  .back-btn:hover { color: #29261F; }
 </style>
 </head>
 <body>
 
-<div class="container">
-  <div class="progress" id="progress">
-    <div class="progress-dot" data-step="1"></div>
-    <div class="progress-dot" data-step="2"></div>
-    <div class="progress-dot" data-step="3"></div>
-    <div class="progress-dot" data-step="4"></div>
-  </div>
-
-  <div class="card">
-
-    <div class="step" data-step="1">
-      <div class="step-eyebrow">Step 1 of 3</div>
-      <h1>Choose a number</h1>
-      <div class="options" data-group="number">
-        <button class="option-btn" data-value="1">1</button>
-        <button class="option-btn" data-value="2">2</button>
-        <button class="option-btn" data-value="3">3</button>
-      </div>
-      <div class="nav-row">
-        <button class="back-btn" disabled>&larr; Back</button>
-        <button class="next-btn" data-next="2">Next &rarr;</button>
-      </div>
+<div class="page">
+  <div class="wrap">
+    <div class="progress-rail" id="progress-rail">
+      <div class="progress-dot" data-dot="0"></div>
+      <div class="progress-dot" data-dot="1"></div>
+      <div class="progress-dot" data-dot="2"></div>
+      <div class="progress-spacer"></div>
+      <div class="progress-label" id="progress-label"></div>
     </div>
 
-    <div class="step" data-step="2">
-      <div class="step-eyebrow">Step 2 of 3</div>
-      <h1>Choose a letter</h1>
-      <div class="options" data-group="letter">
-        <button class="option-btn" data-value="A">A</button>
-        <button class="option-btn" data-value="B">B</button>
-        <button class="option-btn" data-value="C">C</button>
-        <button class="option-btn" data-value="D">D</button>
-      </div>
-      <div class="nav-row">
-        <button class="back-btn" data-back="1">&larr; Back</button>
-        <button class="next-btn" data-next="3">Next &rarr;</button>
-      </div>
-    </div>
+    <div id="step-content"></div>
 
-    <div class="step" data-step="3">
-      <div class="step-eyebrow">Step 3 of 3</div>
-      <h1>Choose a shape</h1>
-      <div class="options" data-group="shape">
-        <button class="option-btn" data-value="circle" aria-label="Circle">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
-        </button>
-        <button class="option-btn" data-value="triangle" aria-label="Triangle">
-          <svg viewBox="0 0 24 24"><path d="M12 3 21 20 3 20Z" stroke-linejoin="round"/></svg>
-        </button>
-        <button class="option-btn" data-value="square" aria-label="Square">
-          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-        </button>
-      </div>
-      <div class="nav-row">
-        <button class="back-btn" data-back="2">&larr; Back</button>
-        <button class="next-btn" data-next="4">Finish &rarr;</button>
-      </div>
-    </div>
-
-    <div class="step" data-step="4">
-      <div class="success-icon">🎉</div>
-      <h1>Success!</h1>
-      <div class="summary" id="summary"></div>
-      <button class="restart-btn" id="restart-btn">Start Over</button>
-    </div>
-
+    <button class="back-btn" id="back-btn" style="display:none">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Back
+    </button>
   </div>
 </div>
 
 <script>
-  const state = { number: null, letter: null, shape: null };
-  let currentStep = 1;
+  const STEPS = [
+    { key: 'number', eyebrow: 'Step one', title: 'Pick a number', copy: 'Choose one of the three to continue.', options: ['1', '2', '3'], grid: 'numbers' },
+    { key: 'letter', eyebrow: 'Step two', title: 'Pick a letter', copy: 'Four to choose from — take your pick.', options: ['A', 'B', 'C', 'D'], grid: 'letters' },
+    { key: 'shape', eyebrow: 'Step three', title: 'Pick a shape', copy: "One more and you're done.", options: [
+      { id: 'circle', label: 'Circle' },
+      { id: 'triangle', label: 'Triangle' },
+      { id: 'square', label: 'Square' }
+    ], grid: 'shapes' }
+  ];
 
-  function goToStep(step) {
-    currentStep = step;
-    document.querySelectorAll('.step').forEach(el => {
-      el.classList.toggle('active', Number(el.dataset.step) === step);
-    });
-    document.querySelectorAll('.progress-dot').forEach(dot => {
-      const dotStep = Number(dot.dataset.step);
-      dot.classList.toggle('active', dotStep === step);
-      dot.classList.toggle('done', dotStep < step);
-    });
+  const state = { step: 0, number: null, letter: null, shape: null };
+
+  function select(key, value) {
+    state[key] = value;
+    state.step += 1;
+    render();
   }
 
-  document.querySelectorAll('.options').forEach(group => {
-    const key = group.dataset.group;
-    group.querySelectorAll('.option-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state[key] = btn.dataset.value;
-        group.querySelectorAll('.option-btn').forEach(b => b.classList.toggle('selected', b === btn));
-        const nextBtn = group.closest('.step').querySelector('.next-btn');
-        nextBtn.classList.add('visible');
-      });
-    });
-  });
-
-  document.querySelectorAll('.next-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const next = Number(btn.dataset.next);
-      if (next === 4) renderSummary();
-      goToStep(next);
-    });
-  });
-
-  document.querySelectorAll('.back-btn[data-back]').forEach(btn => {
-    btn.addEventListener('click', () => goToStep(Number(btn.dataset.back)));
-  });
-
-  function renderSummary() {
-    const summary = document.getElementById('summary');
-    summary.innerHTML = `
-      <span class="summary-pill">${state.number}</span>
-      <span class="summary-pill">${state.letter}</span>
-      <span class="summary-pill">${state.shape.charAt(0).toUpperCase() + state.shape.slice(1)}</span>
-    `;
+  function back() {
+    state.step = Math.max(0, state.step - 1);
+    render();
   }
 
-  document.getElementById('restart-btn').addEventListener('click', () => {
+  function reset() {
+    state.step = 0;
     state.number = null;
     state.letter = null;
     state.shape = null;
-    document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
-    document.querySelectorAll('.next-btn').forEach(b => b.classList.remove('visible'));
-    goToStep(1);
-  });
+    render();
+  }
 
-  goToStep(1);
+  function render() {
+    document.querySelectorAll('.progress-dot').forEach(dot => {
+      const i = Number(dot.dataset.dot);
+      dot.classList.toggle('active', i <= state.step);
+    });
+    document.getElementById('progress-label').textContent = state.step < 3 ? `Step ${state.step + 1} of 3` : 'Complete';
+
+    const content = document.getElementById('step-content');
+    const backBtn = document.getElementById('back-btn');
+
+    if (state.step < 3) {
+      const s = STEPS[state.step];
+      const optionsHtml = s.options.map(opt => {
+        if (s.grid === 'shapes') {
+          const selected = state.shape === opt.id;
+          return `
+            <button class="option-card${selected ? ' selected' : ''}" data-value="${opt.id}">
+              <span class="shape-glyph ${opt.id}"></span>
+              <span class="shape-label">${opt.label}</span>
+            </button>`;
+        }
+        const selected = state[s.key] === opt;
+        return `
+          <button class="option-card${selected ? ' selected' : ''}" data-value="${opt}">
+            <span class="option-glyph-text">${opt}</span>
+          </button>`;
+      }).join('');
+
+      content.innerHTML = `
+        <div class="step">
+          <div class="eyebrow">${s.eyebrow}</div>
+          <h1>${s.title}</h1>
+          <p class="step-copy">${s.copy}</p>
+          <div class="option-grid ${s.grid}">${optionsHtml}</div>
+        </div>`;
+
+      content.querySelectorAll('.option-card').forEach(btn => {
+        btn.addEventListener('click', () => select(s.key, btn.dataset.value));
+      });
+
+      backBtn.style.display = state.step > 0 ? 'inline-flex' : 'none';
+    } else {
+      const shapeLabel = state.shape ? state.shape : '';
+      content.innerHTML = `
+        <div class="success">
+          <div class="success-badge">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#F0EEE6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <h1>All set</h1>
+          <p class="success-copy">You chose <strong>${state.number}, ${state.letter}, and a ${shapeLabel}</strong>.</p>
+          <button class="restart-btn" id="restart-btn">Start over</button>
+        </div>`;
+
+      document.getElementById('restart-btn').addEventListener('click', reset);
+      backBtn.style.display = 'none';
+    }
+  }
+
+  document.getElementById('back-btn').addEventListener('click', back);
+
+  render();
 </script>
 </body>
 </html>
