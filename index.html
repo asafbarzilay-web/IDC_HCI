@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IDC HCI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #F5F4EF;
+    --paper: #FFFFFF;
+    --ink: #3D3929;
+    --ink-soft: #6B6558;
+    --accent: #C15F3C;
+    --accent-soft: #F0E4DC;
+    --border: #E5E2D9;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 560px;
+  }
+
+  .progress {
+    display: flex;
+    justify-content: center;
+    gap: 0.6rem;
+    margin-bottom: 2rem;
+  }
+
+  .progress-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.25s, transform 0.25s;
+  }
+
+  .progress-dot.active {
+    background: var(--accent);
+    transform: scale(1.3);
+  }
+
+  .progress-dot.done {
+    background: var(--accent);
+    opacity: 0.5;
+  }
+
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2.5rem 2rem;
+    box-shadow: 0 1px 2px rgba(61,57,41,0.04), 0 8px 24px rgba(61,57,41,0.06);
+    text-align: center;
+  }
+
+  .step-eyebrow {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.6rem;
+  }
+
+  h1 {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.6rem;
+    font-weight: 400;
+    color: var(--ink);
+    margin-bottom: 2rem;
+    letter-spacing: -0.01em;
+  }
+
+  .options {
+    display: flex;
+    justify-content: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+  }
+
+  .option-btn {
+    width: 84px;
+    height: 84px;
+    border-radius: 16px;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 1.4rem;
+    font-weight: 600;
+    font-family: Georgia, 'Times New Roman', serif;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s, box-shadow 0.15s;
+  }
+
+  .option-btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    transform: translateY(-2px);
+  }
+
+  .option-btn:active { transform: scale(0.96); }
+
+  .option-btn.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .option-btn svg {
+    width: 34px;
+    height: 34px;
+    stroke: var(--ink);
+    fill: none;
+    stroke-width: 2;
+    transition: stroke 0.15s;
+  }
+
+  .option-btn.selected svg { stroke: #fff; }
+
+  .nav-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 2rem;
+  }
+
+  .back-btn {
+    background: none;
+    border: none;
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .back-btn:hover { background: var(--accent-soft); color: var(--accent); }
+  .back-btn:disabled { visibility: hidden; }
+
+  .next-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 0.6rem 1.4rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s, opacity 0.15s;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .next-btn.visible { opacity: 1; pointer-events: auto; }
+  .next-btn:hover { background: #a84f30; }
+  .next-btn:active { transform: scale(0.97); }
+
+  .success-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  .summary {
+    display: flex;
+    justify-content: center;
+    gap: 0.6rem;
+    margin: 1.5rem 0 2rem;
+    flex-wrap: wrap;
+  }
+
+  .summary-pill {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+  }
+
+  .restart-btn {
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 0.65rem 1.5rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  .restart-btn:hover { background: #2a271b; }
+  .restart-btn:active { transform: scale(0.97); }
+
+  .step { display: none; }
+  .step.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="progress" id="progress">
+    <div class="progress-dot" data-step="1"></div>
+    <div class="progress-dot" data-step="2"></div>
+    <div class="progress-dot" data-step="3"></div>
+    <div class="progress-dot" data-step="4"></div>
+  </div>
+
+  <div class="card">
+
+    <div class="step" data-step="1">
+      <div class="step-eyebrow">Step 1 of 3</div>
+      <h1>Choose a number</h1>
+      <div class="options" data-group="number">
+        <button class="option-btn" data-value="1">1</button>
+        <button class="option-btn" data-value="2">2</button>
+        <button class="option-btn" data-value="3">3</button>
+      </div>
+      <div class="nav-row">
+        <button class="back-btn" disabled>&larr; Back</button>
+        <button class="next-btn" data-next="2">Next &rarr;</button>
+      </div>
+    </div>
+
+    <div class="step" data-step="2">
+      <div class="step-eyebrow">Step 2 of 3</div>
+      <h1>Choose a letter</h1>
+      <div class="options" data-group="letter">
+        <button class="option-btn" data-value="A">A</button>
+        <button class="option-btn" data-value="B">B</button>
+        <button class="option-btn" data-value="C">C</button>
+        <button class="option-btn" data-value="D">D</button>
+      </div>
+      <div class="nav-row">
+        <button class="back-btn" data-back="1">&larr; Back</button>
+        <button class="next-btn" data-next="3">Next &rarr;</button>
+      </div>
+    </div>
+
+    <div class="step" data-step="3">
+      <div class="step-eyebrow">Step 3 of 3</div>
+      <h1>Choose a shape</h1>
+      <div class="options" data-group="shape">
+        <button class="option-btn" data-value="circle" aria-label="Circle">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
+        </button>
+        <button class="option-btn" data-value="triangle" aria-label="Triangle">
+          <svg viewBox="0 0 24 24"><path d="M12 3 21 20 3 20Z" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="option-btn" data-value="square" aria-label="Square">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        </button>
+      </div>
+      <div class="nav-row">
+        <button class="back-btn" data-back="2">&larr; Back</button>
+        <button class="next-btn" data-next="4">Finish &rarr;</button>
+      </div>
+    </div>
+
+    <div class="step" data-step="4">
+      <div class="success-icon">🎉</div>
+      <h1>Success!</h1>
+      <div class="summary" id="summary"></div>
+      <button class="restart-btn" id="restart-btn">Start Over</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const state = { number: null, letter: null, shape: null };
+  let currentStep = 1;
+
+  function goToStep(step) {
+    currentStep = step;
+    document.querySelectorAll('.step').forEach(el => {
+      el.classList.toggle('active', Number(el.dataset.step) === step);
+    });
+    document.querySelectorAll('.progress-dot').forEach(dot => {
+      const dotStep = Number(dot.dataset.step);
+      dot.classList.toggle('active', dotStep === step);
+      dot.classList.toggle('done', dotStep < step);
+    });
+  }
+
+  document.querySelectorAll('.options').forEach(group => {
+    const key = group.dataset.group;
+    group.querySelectorAll('.option-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state[key] = btn.dataset.value;
+        group.querySelectorAll('.option-btn').forEach(b => b.classList.toggle('selected', b === btn));
+        const nextBtn = group.closest('.step').querySelector('.next-btn');
+        nextBtn.classList.add('visible');
+      });
+    });
+  });
+
+  document.querySelectorAll('.next-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = Number(btn.dataset.next);
+      if (next === 4) renderSummary();
+      goToStep(next);
+    });
+  });
+
+  document.querySelectorAll('.back-btn[data-back]').forEach(btn => {
+    btn.addEventListener('click', () => goToStep(Number(btn.dataset.back)));
+  });
+
+  function renderSummary() {
+    const summary = document.getElementById('summary');
+    summary.innerHTML = `
+      <span class="summary-pill">${state.number}</span>
+      <span class="summary-pill">${state.letter}</span>
+      <span class="summary-pill">${state.shape.charAt(0).toUpperCase() + state.shape.slice(1)}</span>
+    `;
+  }
+
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    state.number = null;
+    state.letter = null;
+    state.shape = null;
+    document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('.next-btn').forEach(b => b.classList.remove('visible'));
+    goToStep(1);
+  });
+
+  goToStep(1);
+</script>
+</body>
+</html>
