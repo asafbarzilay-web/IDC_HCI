@@ -16,10 +16,14 @@ create policy "Allow public insert" on public.events
   to anon
   with check (true);
 
--- ...and read events back, so the dashboard can render without a server.
--- This data has no personal info (just picks + a random session id), so a public
--- read policy is a reasonable tradeoff for a quick prototype. Tighten later if needed.
-create policy "Allow public read" on public.events
+-- ---------------------------------------------------------------------
+-- Update (tightened): only a logged-in Supabase Auth user may read the
+-- raw event log — not anyone holding the publishable key. Run the two
+-- statements below if you already created the table + old read policy.
+-- ---------------------------------------------------------------------
+drop policy if exists "Allow public read" on public.events;
+
+create policy "Allow authenticated read" on public.events
   for select
-  to anon
+  to authenticated
   using (true);

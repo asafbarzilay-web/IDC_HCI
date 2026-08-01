@@ -136,15 +136,102 @@
     font-size: 14px;
     margin-bottom: 24px;
   }
+
+  .signout-btn {
+    font-family: inherit;
+    font-size: 13px;
+    color: #8A8578;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px 0;
+    text-decoration: underline;
+  }
+  .signout-btn:hover { color: #29261F; }
+
+  .login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 340px;
+    background: #FAF9F5;
+    border: 1px solid #E0DBCE;
+    border-radius: 16px;
+    padding: 32px;
+  }
+
+  .login-card h1 { font-size: 24px; margin: 0 0 6px; }
+  .login-card p { font-size: 14px; color: #6B665A; margin: 0 0 24px; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; font-weight: 500; color: #6B665A; margin-bottom: 6px; }
+  .field input {
+    width: 100%;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid #D8D3C6;
+    border-radius: 8px;
+    background: #FFFFFF;
+    color: #29261F;
+  }
+  .field input:focus { outline: 2px solid #C15F3C; outline-offset: 1px; }
+
+  .login-btn {
+    width: 100%;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: #FAF9F5;
+    background: #C15F3C;
+    border: none;
+    border-radius: 8px;
+    padding: 11px;
+    cursor: pointer;
+    margin-top: 6px;
+    transition: background 0.15s;
+  }
+  .login-btn:hover { background: #A84F30; }
+  .login-btn:disabled { opacity: 0.6; cursor: default; }
+
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 
-<div class="page">
+<div class="login-page" id="login-page" hidden>
+  <div class="login-card">
+    <h1>Dashboard login</h1>
+    <p>Sign in with your Supabase account to view collected data.</p>
+    <form id="login-form">
+      <div class="field">
+        <label for="login-email">Email</label>
+        <input type="email" id="login-email" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="login-btn" id="login-btn">Sign in</button>
+    </form>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<div class="page" id="dashboard-page" hidden>
   <div class="wrap">
     <header>
       <h1>Selector Flow — Dashboard</h1>
-      <button class="refresh-btn" id="refresh-btn">Refresh</button>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <button class="refresh-btn" id="refresh-btn">Refresh</button>
+        <button class="signout-btn" id="signout-btn">Sign out</button>
+      </div>
     </header>
     <div class="updated" id="updated-label">Loading…</div>
 
@@ -289,7 +376,52 @@
   }
 
   document.getElementById('refresh-btn').addEventListener('click', loadDashboard);
-  loadDashboard();
+
+  function showLogin() {
+    document.getElementById('dashboard-page').hidden = true;
+    document.getElementById('login-page').hidden = false;
+  }
+
+  function showDashboard() {
+    document.getElementById('login-page').hidden = true;
+    document.getElementById('dashboard-page').hidden = false;
+    loadDashboard();
+  }
+
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const loginBtn = document.getElementById('login-btn');
+    const errorSlot = document.getElementById('login-error');
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+
+    loginBtn.disabled = true;
+    errorSlot.innerHTML = '';
+
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+    loginBtn.disabled = false;
+
+    if (error) {
+      errorSlot.innerHTML = `<div class="error-box">${error.message}</div>`;
+      return;
+    }
+    showDashboard();
+  });
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await supabaseClient.auth.signOut();
+    showLogin();
+  });
+
+  (async () => {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session) {
+      showDashboard();
+    } else {
+      showLogin();
+    }
+  })();
 </script>
 </body>
 </html>
