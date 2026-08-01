@@ -247,7 +247,7 @@
   ];
 
   const state = { step: 0, number: null, letter: null, shape: null };
-  const sessionId = crypto.randomUUID();
+  let sessionId = crypto.randomUUID();
 
   function logEvent(event_type, value) {
     supabaseClient.from('events').insert({ session_id: sessionId, event_type, value: value ?? null })
@@ -271,6 +271,7 @@
 
   function reset() {
     logEvent('restart');
+    sessionId = crypto.randomUUID();
     state.step = 0;
     state.number = null;
     state.letter = null;
