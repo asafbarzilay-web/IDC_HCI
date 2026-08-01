@@ -201,6 +201,51 @@
   .login-btn:disabled { opacity: 0.6; cursor: default; }
 
   [hidden] { display: none !important; }
+
+  .filter-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: #FAF9F5;
+    border: 1px solid #E0DBCE;
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-top: 20px;
+  }
+
+  .filter-field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #8A8578;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+
+  .filter-field input, .filter-field select {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 10px;
+    border: 1px solid #D8D3C6;
+    border-radius: 8px;
+    background: #FFFFFF;
+    color: #29261F;
+  }
+  .filter-field input:focus, .filter-field select:focus { outline: 2px solid #C15F3C; outline-offset: 1px; }
+
+  .clear-filters-btn {
+    font-family: inherit;
+    font-size: 13px;
+    color: #8A8578;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 7px 0;
+    text-decoration: underline;
+  }
+  .clear-filters-btn:hover { color: #29261F; }
 </style>
 </head>
 <body>
@@ -235,9 +280,33 @@
     </header>
     <div class="updated" id="updated-label">Loading…</div>
 
+    <div class="filter-bar">
+      <div class="filter-field">
+        <label for="filter-from">From</label>
+        <input type="date" id="filter-from">
+      </div>
+      <div class="filter-field">
+        <label for="filter-to">To</label>
+        <input type="date" id="filter-to">
+      </div>
+      <div class="filter-field">
+        <label for="filter-platform">Platform</label>
+        <select id="filter-platform">
+          <option value="all">All</option>
+          <option value="desktop">Desktop</option>
+          <option value="mobile">Mobile</option>
+        </select>
+      </div>
+      <button class="clear-filters-btn" id="clear-filters-btn">Clear filters</button>
+    </div>
+
     <div id="error-slot"></div>
 
     <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-label">Unique users</div>
+        <div class="stat-value" id="stat-users">—</div>
+      </div>
       <div class="stat-card">
         <div class="stat-label">Sessions started</div>
         <div class="stat-value" id="stat-started">—</div>
@@ -276,7 +345,7 @@
       <div class="events-scroll">
         <table>
           <thead>
-            <tr><th>Time</th><th>Session</th><th>Event</th><th>Value</th></tr>
+            <tr><th>Time</th><th>Session</th><th>Platform</th><th>Event</th><th>Value</th></tr>
           </thead>
           <tbody id="events-body"></tbody>
         </table>
@@ -319,11 +388,21 @@
     refreshBtn.disabled = true;
     errorSlot.innerHTML = '';
 
-    const { data, error } = await supabaseClient
+    const fromVal = document.getElementById('filter-from').value;
+    const toVal = document.getElementById('filter-to').value;
+    const platformVal = document.getElementById('filter-platform').value;
+
+    let query = supabaseClient
       .from('events')
-      .select('session_id, event_type, value, created_at')
+      .select('session_id, user_id, platform, event_type, value, created_at')
       .order('id', { ascending: true })
       .limit(10000);
+
+    if (fromVal) query = query.gte('created_at', `${fromVal}T00:00:00.000Z`);
+    if (toVal) query = query.lte('created_at', `${toVal}T23:59:59.999Z`);
+    if (platformVal !== 'all') query = query.eq('platform', platformVal);
+
+    const { data, error } = await query;
 
     refreshBtn.disabled = false;
 
@@ -344,7 +423,9 @@
     const completedCount = sessions.filter(s => s.complete !== undefined).length;
     const restartedCount = sessions.filter(s => s.restart !== undefined).length;
     const rate = startedCount > 0 ? Math.round((completedCount / startedCount) * 100) : 0;
+    const uniqueUsers = new Set(data.filter(r => r.user_id).map(r => r.user_id)).size;
 
+    document.getElementById('stat-users').textContent = uniqueUsers;
     document.getElementById('stat-started').textContent = startedCount;
     document.getElementById('stat-completed').textContent = completedCount;
     document.getElementById('stat-rate').textContent = `${rate}%`;
@@ -367,15 +448,25 @@
           <tr>
             <td>${fmtTime(row.created_at)}</td>
             <td>${row.session_id.slice(0, 8)}</td>
+            <td>${row.platform ?? '—'}</td>
             <td>${row.event_type}</td>
             <td>${row.value ?? ''}</td>
           </tr>`).join('')
-      : '<tr><td colspan="4" class="empty-note">No events yet.</td></tr>';
+      : '<tr><td colspan="5" class="empty-note">No events match these filters.</td></tr>';
 
-    document.getElementById('updated-label').textContent = `Updated ${new Date().toLocaleTimeString()} · ${data.length} total events`;
+    document.getElementById('updated-label').textContent = `Updated ${new Date().toLocaleTimeString()} · ${data.length} matching events`;
   }
 
   document.getElementById('refresh-btn').addEventListener('click', loadDashboard);
+  document.getElementById('filter-from').addEventListener('change', loadDashboard);
+  document.getElementById('filter-to').addEventListener('change', loadDashboard);
+  document.getElementById('filter-platform').addEventListener('change', loadDashboard);
+  document.getElementById('clear-filters-btn').addEventListener('click', () => {
+    document.getElementById('filter-from').value = '';
+    document.getElementById('filter-to').value = '';
+    document.getElementById('filter-platform').value = 'all';
+    loadDashboard();
+  });
 
   function showLogin() {
     document.getElementById('dashboard-page').hidden = true;

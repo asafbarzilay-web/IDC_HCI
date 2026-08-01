@@ -27,3 +27,11 @@ create policy "Allow authenticated read" on public.events
   for select
   to authenticated
   using (true);
+
+-- ---------------------------------------------------------------------
+-- Update: track a persistent (per-browser) user id separate from the
+-- per-attempt session id, plus which platform they used, so the
+-- dashboard can report unique users and filter by device type.
+-- ---------------------------------------------------------------------
+alter table public.events add column if not exists user_id text;
+alter table public.events add column if not exists platform text check (platform in ('mobile','desktop'));

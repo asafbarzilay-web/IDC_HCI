@@ -249,8 +249,28 @@
   const state = { step: 0, number: null, letter: null, shape: null };
   let sessionId = crypto.randomUUID();
 
+  function getOrCreateUserId() {
+    const key = 'idc_hci_user_id';
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(key, id);
+    }
+    return id;
+  }
+
+  function detectPlatform() {
+    const ua = navigator.userAgent || '';
+    const isTouchMac = /Mac/i.test(navigator.platform || '') && navigator.maxTouchPoints > 1;
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua) || isTouchMac;
+    return isMobile ? 'mobile' : 'desktop';
+  }
+
+  const userId = getOrCreateUserId();
+  const platform = detectPlatform();
+
   function logEvent(event_type, value) {
-    supabaseClient.from('events').insert({ session_id: sessionId, event_type, value: value ?? null })
+    supabaseClient.from('events').insert({ session_id: sessionId, user_id: userId, platform, event_type, value: value ?? null })
       .then(({ error }) => { if (error) console.error('logEvent failed', error); });
   }
 
