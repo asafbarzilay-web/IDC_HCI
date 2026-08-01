@@ -35,3 +35,18 @@ create policy "Allow authenticated read" on public.events
 -- ---------------------------------------------------------------------
 alter table public.events add column if not exists user_id text;
 alter table public.events add column if not exists platform text check (platform in ('mobile','desktop'));
+
+-- ---------------------------------------------------------------------
+-- Update: per-stage completion time, plus raw click positions (normalized
+-- 0-1 within the app's content area) for heatmaps. 'click' is logged on
+-- every click anywhere in the app so heatmaps reflect real usage; it's
+-- added to the event_type allow-list alongside the existing values.
+-- ---------------------------------------------------------------------
+alter table public.events add column if not exists duration_ms integer;
+alter table public.events add column if not exists step text;
+alter table public.events add column if not exists click_x double precision;
+alter table public.events add column if not exists click_y double precision;
+
+alter table public.events drop constraint if exists events_event_type_check;
+alter table public.events add constraint events_event_type_check
+  check (event_type in ('select_number','select_letter','select_shape','complete','restart','click'));

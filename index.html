@@ -248,6 +248,8 @@
 
   const state = { step: 0, number: null, letter: null, shape: null };
   let sessionId = crypto.randomUUID();
+  let sessionStartedAt = Date.now();
+  let stepEnteredAt = Date.now();
 
   function getOrCreateUserId() {
     const key = 'idc_hci_user_id';
@@ -269,17 +271,32 @@
   const userId = getOrCreateUserId();
   const platform = detectPlatform();
 
-  function logEvent(event_type, value) {
-    supabaseClient.from('events').insert({ session_id: sessionId, user_id: userId, platform, event_type, value: value ?? null })
-      .then(({ error }) => { if (error) console.error('logEvent failed', error); });
+  function currentStepLabel() {
+    return state.step < 3 ? STEPS[state.step].key : 'success';
+  }
+
+  function logEvent(event_type, value, extra = {}) {
+    supabaseClient.from('events').insert({
+      session_id: sessionId,
+      user_id: userId,
+      platform,
+      event_type,
+      value: value ?? null,
+      duration_ms: extra.duration_ms ?? null,
+      step: extra.step ?? null,
+      click_x: extra.click_x ?? null,
+      click_y: extra.click_y ?? null
+    }).then(({ error }) => { if (error) console.error('logEvent failed', error); });
   }
 
   function select(key, value) {
+    const duration_ms = Date.now() - stepEnteredAt;
     state[key] = value;
     state.step += 1;
-    logEvent(`select_${key}`, value);
+    logEvent(`select_${key}`, value, { duration_ms, step: key });
     if (state.step === 3) {
-      logEvent('complete', `${state.number}, ${state.letter}, ${state.shape}`);
+      const totalDuration = Date.now() - sessionStartedAt;
+      logEvent('complete', `${state.number}, ${state.letter}, ${state.shape}`, { duration_ms: totalDuration, step: 'success' });
     }
     render();
   }
@@ -292,6 +309,7 @@
   function reset() {
     logEvent('restart');
     sessionId = crypto.randomUUID();
+    sessionStartedAt = Date.now();
     state.step = 0;
     state.number = null;
     state.letter = null;
@@ -299,7 +317,17 @@
     render();
   }
 
+  document.addEventListener('click', (e) => {
+    // Capture phase: runs before any button's own click handler mutates
+    // state, so the logged step always reflects where the click landed.
+    const rect = document.querySelector('.wrap').getBoundingClientRect();
+    const click_x = (e.clientX - rect.left) / rect.width;
+    const click_y = (e.clientY - rect.top) / rect.height;
+    logEvent('click', null, { step: currentStepLabel(), click_x, click_y });
+  }, true);
+
   function render() {
+    stepEnteredAt = Date.now();
     document.querySelectorAll('.progress-dot').forEach(dot => {
       const i = Number(dot.dataset.dot);
       dot.classList.toggle('active', i <= state.step);
