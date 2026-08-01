@@ -534,9 +534,10 @@
       // Clamping pins it to the nearest edge instead of losing it.
       const x = Math.max(0, Math.min(1, p.click_x)) * w;
       const y = Math.max(0, Math.min(1, p.click_y)) * h;
-      const r = 26;
+      const r = 30;
       const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
-      gradient.addColorStop(0, 'rgba(193,95,60,0.30)');
+      gradient.addColorStop(0, 'rgba(193,95,60,0.55)');
+      gradient.addColorStop(0.5, 'rgba(193,95,60,0.22)');
       gradient.addColorStop(1, 'rgba(193,95,60,0)');
       ctx.fillStyle = gradient;
       ctx.beginPath();
