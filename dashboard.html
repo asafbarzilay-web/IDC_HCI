@@ -528,9 +528,12 @@
 
     ctx.globalCompositeOperation = 'lighter';
     points.forEach(p => {
-      const x = p.click_x * w;
-      const y = p.click_y * h;
-      if (x < -40 || x > w + 40 || y < -40 || y > h + 40) return;
+      // Clamp to 0-1 before scaling: a click just past the measured
+      // content edge (e.g. near the bottom of a tall step) would
+      // otherwise land outside the canvas entirely and silently vanish.
+      // Clamping pins it to the nearest edge instead of losing it.
+      const x = Math.max(0, Math.min(1, p.click_x)) * w;
+      const y = Math.max(0, Math.min(1, p.click_y)) * h;
       const r = 26;
       const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
       gradient.addColorStop(0, 'rgba(193,95,60,0.30)');
