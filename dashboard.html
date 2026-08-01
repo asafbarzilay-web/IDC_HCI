@@ -146,13 +146,30 @@
 
   .heatmap-canvas {
     width: 100%;
-    height: auto;
-    aspect-ratio: 560 / 360;
-    border-radius: 12px;
+    height: 100%;
     display: block;
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
   }
 
-  .heatmap-wrap { position: relative; }
+  .heatmap-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    pointer-events: none;
+    background: #F0EEE6;
+  }
+
+  .heatmap-wrap {
+    position: relative;
+    aspect-ratio: 560 / 360;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #E0DBCE;
+  }
   .heatmap-wrap .empty-note {
     position: absolute;
     inset: 0;
@@ -390,6 +407,7 @@
           <button class="heatmap-tab" data-step="success">Success</button>
         </div>
         <div class="heatmap-wrap">
+          <iframe class="heatmap-frame" id="heatmap-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
           <canvas class="heatmap-canvas" id="heatmap-canvas" width="560" height="360"></canvas>
           <div class="empty-note" id="heatmap-empty" hidden>No clicks recorded yet for this step.</div>
         </div>
@@ -501,8 +519,6 @@
     const w = canvas.width, h = canvas.height;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#F0EEE6';
-    ctx.fillRect(0, 0, w, h);
 
     const points = lastData.filter(r =>
       r.event_type === 'click' && r.step === currentHeatmapStep && r.click_x != null && r.click_y != null
@@ -532,6 +548,7 @@
     if (!btn) return;
     document.querySelectorAll('.heatmap-tab').forEach(b => b.classList.toggle('active', b === btn));
     currentHeatmapStep = btn.dataset.step;
+    document.getElementById('heatmap-frame').src = `index.html?previewStep=${currentHeatmapStep}`;
     renderHeatmap();
   });
 

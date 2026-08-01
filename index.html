@@ -246,10 +246,26 @@
     ], grid: 'shapes' }
   ];
 
+  // Preview mode: renders a single step statically (no tracking, no
+  // interaction) so the dashboard can show a real screen behind its
+  // heatmap dots. Activated via ?previewStep=number|letter|shape|success
+  const PREVIEW_STEP_INDEX = { number: 0, letter: 1, shape: 2, success: 3 };
+  const previewStepParam = new URLSearchParams(location.search).get('previewStep');
+  const PREVIEW_MODE = previewStepParam in PREVIEW_STEP_INDEX;
+
   const state = { step: 0, number: null, letter: null, shape: null };
   let sessionId = crypto.randomUUID();
   let sessionStartedAt = Date.now();
   let stepEnteredAt = Date.now();
+
+  if (PREVIEW_MODE) {
+    state.step = PREVIEW_STEP_INDEX[previewStepParam];
+    if (state.step === 3) {
+      state.number = '2';
+      state.letter = 'B';
+      state.shape = 'square';
+    }
+  }
 
   function getOrCreateUserId() {
     const key = 'idc_hci_user_id';
@@ -276,6 +292,7 @@
   }
 
   function logEvent(event_type, value, extra = {}) {
+    if (PREVIEW_MODE) return;
     supabaseClient.from('events').insert({
       session_id: sessionId,
       user_id: userId,
