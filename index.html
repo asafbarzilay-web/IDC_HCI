@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -245,10 +247,20 @@
   ];
 
   const state = { step: 0, number: null, letter: null, shape: null };
+  const sessionId = crypto.randomUUID();
+
+  function logEvent(event_type, value) {
+    supabaseClient.from('events').insert({ session_id: sessionId, event_type, value: value ?? null })
+      .then(({ error }) => { if (error) console.error('logEvent failed', error); });
+  }
 
   function select(key, value) {
     state[key] = value;
     state.step += 1;
+    logEvent(`select_${key}`, value);
+    if (state.step === 3) {
+      logEvent('complete', `${state.number}, ${state.letter}, ${state.shape}`);
+    }
     render();
   }
 
@@ -258,6 +270,7 @@
   }
 
   function reset() {
+    logEvent('restart');
     state.step = 0;
     state.number = null;
     state.letter = null;
