@@ -9,6 +9,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
+<script>
+  // Isolated client: never loads or stores an auth session, so inserts
+  // are always made as the anonymous role. Without this, logging into
+  // the dashboard on this same origin would attach the auth session to
+  // the app's inserts too — and the RLS insert policy (anon only) would
+  // silently reject every event from that browser.
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+</script>
 <style>
   * { box-sizing: border-box; }
   body {

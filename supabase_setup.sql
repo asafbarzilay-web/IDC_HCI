@@ -50,3 +50,15 @@ alter table public.events add column if not exists click_y double precision;
 alter table public.events drop constraint if exists events_event_type_check;
 alter table public.events add constraint events_event_type_check
   check (event_type in ('select_number','select_letter','select_shape','complete','restart','click'));
+
+-- ---------------------------------------------------------------------
+-- Update (bug fix): the original insert policy covered only `anon`, so a
+-- browser that had logged into the dashboard (same origin) sent inserts
+-- as `authenticated` and had every event silently rejected. The app now
+-- uses a never-authenticated client, and this policy makes logged-in
+-- browsers work too.
+-- ---------------------------------------------------------------------
+create policy "Allow authenticated insert" on public.events
+  for insert
+  to authenticated
+  with check (true);
