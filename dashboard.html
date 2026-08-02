@@ -518,6 +518,27 @@
   let lastData = [];
   let currentHeatmapStep = 'number';
 
+  // Where the preview's content column sits, in canvas pixels. Clicks are
+  // stored relative to that column, so we project them onto the preview's
+  // own column — that keeps a click on a button's left edge on that same
+  // edge regardless of how big the visitor's window was. Falls back to
+  // treating the whole canvas as the column if the preview isn't ready.
+  function previewColumnRect(canvas) {
+    const frame = document.getElementById('heatmap-frame');
+    try {
+      const fwin = frame.contentWindow;
+      const wrap = fwin.document.querySelector('.wrap');
+      if (!wrap) return null;
+      const r = wrap.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const sx = canvas.width / fwin.innerWidth;
+      const sy = canvas.height / fwin.innerHeight;
+      return { left: r.left * sx, top: r.top * sy, width: r.width * sx, height: r.height * sy };
+    } catch {
+      return null; // preview still loading
+    }
+  }
+
   function renderHeatmap() {
     const canvas = document.getElementById('heatmap-canvas');
     const ctx = canvas.getContext('2d');
@@ -531,14 +552,14 @@
 
     document.getElementById('heatmap-empty').hidden = points.length > 0;
 
+    const col = previewColumnRect(canvas) || { left: 0, top: 0, width: w, height: h };
+
     ctx.globalCompositeOperation = 'lighter';
     points.forEach(p => {
-      // Clamp to 0-1 before scaling: a click just past the measured
-      // content edge (e.g. near the bottom of a tall step) would
-      // otherwise land outside the canvas entirely and silently vanish.
-      // Clamping pins it to the nearest edge instead of losing it.
-      const x = Math.max(0, Math.min(1, p.click_x)) * w;
-      const y = Math.max(0, Math.min(1, p.click_y)) * h;
+      const x = col.left + p.click_x * col.width;
+      const y = col.top + p.click_y * col.height;
+      // No clamping: margin clicks legitimately sit outside the column and
+      // belong in the margin. The canvas clips anything past its edge.
       const r = 30;
       const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
       gradient.addColorStop(0, 'rgba(193,95,60,0.55)');
@@ -551,6 +572,11 @@
     });
     ctx.globalCompositeOperation = 'source-over';
   }
+
+  // The dots are positioned from the preview's layout, so redraw once it
+  // has actually rendered — and again if the panel is resized.
+  document.getElementById('heatmap-frame').addEventListener('load', renderHeatmap);
+  window.addEventListener('resize', renderHeatmap);
 
   document.getElementById('heatmap-tabs').addEventListener('click', (e) => {
     const btn = e.target.closest('.heatmap-tab');

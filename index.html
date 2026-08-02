@@ -348,13 +348,19 @@
     // Capture phase: runs before any button's own click handler mutates
     // state, so the logged step always reflects where the click landed.
     //
-    // Normalize against the viewport, not the inner .wrap box: .wrap is a
-    // narrow centered column, so clicks in the margins around it (most of
-    // a wide screen) would fall outside 0-1 and be lost. Viewport-relative
-    // means any click on screen maps into 0-1, and the dashboard's preview
-    // iframe renders the same full-viewport layout, so they line up.
-    const click_x = e.clientX / window.innerWidth;
-    const click_y = e.clientY / window.innerHeight;
+    // Anchor to the content column (.wrap), not the viewport. The column
+    // is a fixed-max-width block whose layout is identical everywhere,
+    // while the surrounding margins vary hugely with window size — so
+    // column-relative coordinates are the only ones that mean the same
+    // thing on a phone, a laptop, and the dashboard's small preview.
+    //
+    // Values intentionally fall outside 0-1 for clicks in the margins
+    // (negative to the left/above, >1 to the right/below). The dashboard
+    // maps them onto the preview's own column, so they stay in the right
+    // place instead of being clamped to an edge.
+    const rect = document.querySelector('.wrap').getBoundingClientRect();
+    const click_x = (e.clientX - rect.left) / rect.width;
+    const click_y = (e.clientY - rect.top) / rect.height;
     logEvent('click', null, { step: currentStepLabel(), click_x, click_y });
   }, true);
 
