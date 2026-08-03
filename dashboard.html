@@ -787,9 +787,14 @@
 
     const maxSeq = sessions.reduce((m, s) =>
       s.clicks.reduce((n, c) => Math.max(n, c.seq || 0), m), 0);
-    ordinalFilter.setOptions(
-      Array.from({ length: maxSeq }, (_, i) => ({ value: String(i + 1), label: ordinalName(i + 1) }))
-    );
+    const opts = Array.from({ length: maxSeq }, (_, i) => ({ value: String(i + 1), label: ordinalName(i + 1) }));
+
+    // Older clicks were logged before ordinals were recorded. Surface them
+    // as their own choice so they can be included or excluded deliberately.
+    if (sessions.some(s => s.clicks.some(c => c.seq == null))) {
+      opts.push({ value: 'unknown', label: 'Unrecorded order (older data)' });
+    }
+    ordinalFilter.setOptions(opts);
   }
 
   // Where the preview's content column sits, in canvas pixels. Clicks are
@@ -824,9 +829,10 @@
       .filter(s => sessionFilter.has(s.session_id))
       .flatMap(s => (s.clicks || []))
       .filter(c => c.step === currentHeatmapStep)
-      // Clicks predating the seq column have no ordinal; keep them visible
-      // unless the ordinal filter is actually being used to narrow things.
-      .filter(c => ordinalFilter.isEmpty() || c.seq == null || ordinalFilter.has(c.seq));
+      // Clicks predating the seq column carry no ordinal. They get their own
+      // "unrecorded" entry in the filter rather than being forced through it,
+      // so selecting "1st click" really does show only first clicks.
+      .filter(c => ordinalFilter.isEmpty() || ordinalFilter.has(c.seq == null ? 'unknown' : c.seq));
 
     document.getElementById('heatmap-empty').hidden = points.length > 0;
 
