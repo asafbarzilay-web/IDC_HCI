@@ -420,11 +420,11 @@
     </div>
 
     <div class="panel events-panel">
-      <h2>Recent events</h2>
+      <h2>Recent selections</h2>
       <div class="events-scroll">
         <table>
           <thead>
-            <tr><th>Time</th><th>Session</th><th>Platform</th><th>Event</th><th>Value</th><th>Duration</th></tr>
+            <tr><th>Time</th><th>Session</th><th>Platform</th><th>Step</th><th>Choice</th><th>Time on step</th></tr>
           </thead>
           <tbody id="events-body"></tbody>
         </table>
@@ -475,14 +475,15 @@
     return { avg: sum / sorted.length, median, min: sorted[0], max: sorted[sorted.length - 1], count: sorted.length };
   }
 
-  function renderTimingTable(data) {
+  function renderTimingTable(sessions) {
     const stageDurations = { number: [], letter: [], shape: [], total: [] };
-    data.forEach(row => {
-      if (row.duration_ms == null) return;
-      if (row.event_type === 'select_number') stageDurations.number.push(row.duration_ms);
-      else if (row.event_type === 'select_letter') stageDurations.letter.push(row.duration_ms);
-      else if (row.event_type === 'select_shape') stageDurations.shape.push(row.duration_ms);
-      else if (row.event_type === 'complete') stageDurations.total.push(row.duration_ms);
+    sessions.forEach(s => {
+      const picks = s.selections || [];
+      picks.forEach(p => stageDurations[p.step]?.push(p.duration_ms));
+      // Total is only meaningful for a run that finished all three steps.
+      if (picks.length === 3) {
+        stageDurations.total.push(picks.reduce((sum, p) => sum + p.duration_ms, 0));
+      }
     });
 
     const rows = [
@@ -546,9 +547,8 @@
 
     ctx.clearRect(0, 0, w, h);
 
-    const points = lastData.filter(r =>
-      r.event_type === 'click' && r.step === currentHeatmapStep && r.click_x != null && r.click_y != null
-    );
+    const points = lastData.flatMap(s => (s.clicks || []))
+      .filter(c => c.step === currentHeatmapStep);
 
     document.getElementById('heatmap-empty').hidden = points.length > 0;
 
@@ -556,8 +556,8 @@
 
     ctx.globalCompositeOperation = 'lighter';
     points.forEach(p => {
-      const x = col.left + p.click_x * col.width;
-      const y = col.top + p.click_y * col.height;
+      const x = col.left + p.x * col.width;
+      const y = col.top + p.y * col.height;
       // No clamping: margin clicks legitimately sit outside the column and
       // belong in the margin. The canvas clips anything past its edge.
       const r = 30;
@@ -597,14 +597,19 @@
     const toVal = document.getElementById('filter-to').value;
     const platformVal = document.getElementById('filter-platform').value;
 
+    // One query: sessions with their picks and clicks attached. The date
+    // and platform filters live on the session, so children come along
+    // already scoped — no client-side stitching, no second round trip.
     let query = supabaseClient
-      .from('events')
-      .select('session_id, user_id, platform, event_type, value, duration_ms, step, click_x, click_y, created_at')
-      .order('id', { ascending: true })
-      .limit(10000);
+      .from('sessions')
+      .select('session_id, user_id, platform, is_restart, started_at,'
+            + ' selections(step, value, duration_ms, created_at),'
+            + ' clicks(step, x, y)')
+      .order('started_at', { ascending: true })
+      .limit(5000);
 
-    if (fromVal) query = query.gte('created_at', `${fromVal}T00:00:00.000Z`);
-    if (toVal) query = query.lte('created_at', `${toVal}T23:59:59.999Z`);
+    if (fromVal) query = query.gte('started_at', `${fromVal}T00:00:00.000Z`);
+    if (toVal) query = query.lte('started_at', `${toVal}T23:59:59.999Z`);
     if (platformVal !== 'all') query = query.eq('platform', platformVal);
 
     const { data, error } = await query;
@@ -617,55 +622,56 @@
       return;
     }
 
-    const bySession = {};
-    data.forEach(row => {
-      if (!bySession[row.session_id]) bySession[row.session_id] = {};
-      bySession[row.session_id][row.event_type] = row.value;
-    });
+    const sessions = data.map(s => ({ ...s, selections: s.selections || [], clicks: s.clicks || [] }));
 
-    const sessions = Object.values(bySession);
-    const startedCount = sessions.filter(s => s.select_number !== undefined).length;
-    const completedCount = sessions.filter(s => s.complete !== undefined).length;
-    const restartedCount = sessions.filter(s => s.restart !== undefined).length;
-    const rate = startedCount > 0 ? Math.round((completedCount / startedCount) * 100) : 0;
-    const uniqueUsers = new Set(data.filter(r => r.user_id).map(r => r.user_id)).size;
+    // "Started" means the visitor actually made a pick; a session with no
+    // selections is someone who opened the page and left.
+    const started = sessions.filter(s => s.selections.length > 0);
+    const completed = sessions.filter(s => s.selections.length === 3);
+    const restarted = sessions.filter(s => s.is_restart);
+    const rate = started.length > 0 ? Math.round((completed.length / started.length) * 100) : 0;
+    const uniqueUsers = new Set(sessions.map(s => s.user_id)).size;
 
     document.getElementById('stat-users').textContent = uniqueUsers;
-    document.getElementById('stat-started').textContent = startedCount;
-    document.getElementById('stat-completed').textContent = completedCount;
+    document.getElementById('stat-started').textContent = started.length;
+    document.getElementById('stat-completed').textContent = completed.length;
     document.getElementById('stat-rate').textContent = `${rate}%`;
-    document.getElementById('stat-restarted').textContent = restartedCount;
+    document.getElementById('stat-restarted').textContent = restarted.length;
 
-    const numberCounts = {}, letterCounts = {}, shapeCounts = {};
-    sessions.forEach(s => {
-      if (s.select_number) numberCounts[s.select_number] = (numberCounts[s.select_number] || 0) + 1;
-      if (s.select_letter) letterCounts[s.select_letter] = (letterCounts[s.select_letter] || 0) + 1;
-      if (s.select_shape) shapeCounts[s.select_shape] = (shapeCounts[s.select_shape] || 0) + 1;
-    });
+    const counts = { number: {}, letter: {}, shape: {} };
+    sessions.forEach(s => s.selections.forEach(p => {
+      counts[p.step][p.value] = (counts[p.step][p.value] || 0) + 1;
+    }));
 
-    renderBars('chart-number', numberCounts, ['1', '2', '3']);
-    renderBars('chart-letter', letterCounts, ['A', 'B', 'C', 'D']);
-    renderBars('chart-shape', shapeCounts, ['circle', 'triangle', 'square']);
+    renderBars('chart-number', counts.number, ['1', '2', '3']);
+    renderBars('chart-letter', counts.letter, ['A', 'B', 'C', 'D']);
+    renderBars('chart-shape', counts.shape, ['circle', 'triangle', 'square']);
 
-    renderTimingTable(data);
+    renderTimingTable(sessions);
 
-    lastData = data;
+    lastData = sessions;
     renderHeatmap();
 
-    const recent = data.filter(r => r.event_type !== 'click').slice(-25).reverse();
+    const recent = sessions
+      .flatMap(s => s.selections.map(p => ({ ...p, session_id: s.session_id, platform: s.platform })))
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .slice(-25).reverse();
+
     document.getElementById('events-body').innerHTML = recent.length
       ? recent.map(row => `
           <tr>
             <td>${fmtTime(row.created_at)}</td>
             <td>${row.session_id.slice(0, 8)}</td>
             <td>${row.platform ?? '—'}</td>
-            <td>${row.event_type}</td>
-            <td>${row.value ?? ''}</td>
+            <td>${row.step}</td>
+            <td>${row.value}</td>
             <td>${fmtDuration(row.duration_ms)}</td>
           </tr>`).join('')
-      : '<tr><td colspan="6" class="empty-note">No events match these filters.</td></tr>';
+      : '<tr><td colspan="6" class="empty-note">No selections match these filters.</td></tr>';
 
-    document.getElementById('updated-label').textContent = `Updated ${new Date().toLocaleTimeString()} · ${data.length} matching events`;
+    const clickCount = sessions.reduce((n, s) => n + s.clicks.length, 0);
+    document.getElementById('updated-label').textContent =
+      `Updated ${new Date().toLocaleTimeString()} · ${sessions.length} sessions · ${clickCount} clicks`;
   }
 
   document.getElementById('refresh-btn').addEventListener('click', loadDashboard);

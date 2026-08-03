@@ -265,8 +265,8 @@
 
   const state = { step: 0, number: null, letter: null, shape: null };
   let sessionId = crypto.randomUUID();
-  let sessionStartedAt = Date.now();
   let stepEnteredAt = Date.now();
+  let sessionReady = null;
 
   if (PREVIEW_MODE) {
     state.step = PREVIEW_STEP_INDEX[previewStepParam];
@@ -301,30 +301,33 @@
     return state.step < 3 ? STEPS[state.step].key : 'success';
   }
 
-  function logEvent(event_type, value, extra = {}) {
+  // Selections and clicks reference a session row, so that row has to
+  // exist first. startSession() keeps the in-flight insert as a promise
+  // and every later write waits on it — no ordering races, no orphans.
+  function startSession(isRestart) {
+    if (PREVIEW_MODE) return Promise.resolve();
+    return supabaseClient.from('sessions')
+      .insert({ session_id: sessionId, user_id: userId, platform, is_restart: isRestart })
+      .then(({ error }) => { if (error) console.error('startSession failed', error); });
+  }
+
+  // Capture the ids at call time: a restart swaps both sessionId and
+  // sessionReady, and a write already in flight must keep its own pair.
+  async function write(table, row) {
     if (PREVIEW_MODE) return;
-    supabaseClient.from('events').insert({
-      session_id: sessionId,
-      user_id: userId,
-      platform,
-      event_type,
-      value: value ?? null,
-      duration_ms: extra.duration_ms ?? null,
-      step: extra.step ?? null,
-      click_x: extra.click_x ?? null,
-      click_y: extra.click_y ?? null
-    }).then(({ error }) => { if (error) console.error('logEvent failed', error); });
+    const sid = sessionId, ready = sessionReady;
+    await ready;
+    const { error } = await supabaseClient.from(table).insert({ session_id: sid, ...row });
+    if (error) console.error(`insert into ${table} failed`, error);
   }
 
   function select(key, value) {
     const duration_ms = Date.now() - stepEnteredAt;
     state[key] = value;
     state.step += 1;
-    logEvent(`select_${key}`, value, { duration_ms, step: key });
-    if (state.step === 3) {
-      const totalDuration = Date.now() - sessionStartedAt;
-      logEvent('complete', `${state.number}, ${state.letter}, ${state.shape}`, { duration_ms: totalDuration, step: 'success' });
-    }
+    // A run is complete when its third selection lands, and total time is
+    // the sum of the three durations — so no extra 'complete' row.
+    write('selections', { step: key, value, duration_ms });
     render();
   }
 
@@ -334,9 +337,10 @@
   }
 
   function reset() {
-    logEvent('restart');
+    // Start over begins a genuinely new attempt: new session row, flagged
+    // as a restart so the dashboard can count them.
     sessionId = crypto.randomUUID();
-    sessionStartedAt = Date.now();
+    sessionReady = startSession(true);
     state.step = 0;
     state.number = null;
     state.letter = null;
@@ -359,9 +363,12 @@
     // maps them onto the preview's own column, so they stay in the right
     // place instead of being clamped to an edge.
     const rect = document.querySelector('.wrap').getBoundingClientRect();
-    const click_x = (e.clientX - rect.left) / rect.width;
-    const click_y = (e.clientY - rect.top) / rect.height;
-    logEvent('click', null, { step: currentStepLabel(), click_x, click_y });
+    // A zero-sized column (hidden tab, not yet laid out) would divide by
+    // zero and store Infinity/NaN. Nothing meaningful to record — skip.
+    if (!rect.width || !rect.height) return;
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    write('clicks', { step: currentStepLabel(), x, y });
   }, true);
 
   function render() {
@@ -424,6 +431,10 @@
   }
 
   document.getElementById('back-btn').addEventListener('click', back);
+
+  // Open the session immediately (skipped in preview mode, so the
+  // dashboard's four preview frames never create phantom sessions).
+  sessionReady = startSession(false);
 
   render();
 </script>
