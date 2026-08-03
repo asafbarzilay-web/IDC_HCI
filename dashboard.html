@@ -168,6 +168,54 @@
     background: #F0EEE6;
   }
 
+  .heatmap-controls {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+
+  .heatmap-control label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #8A8578;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+
+  .heatmap-control select {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 10px;
+    border: 1px solid #D8D3C6;
+    border-radius: 8px;
+    background: #FFFFFF;
+    color: #29261F;
+    max-width: 260px;
+  }
+  .heatmap-control select:focus { outline: 2px solid #C15F3C; outline-offset: 1px; }
+
+  .ordinal-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .ordinal-chip {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    color: #6B665A;
+    background: #F0EEE6;
+    border: 1px solid #E0DBCE;
+    border-radius: 999px;
+    padding: 5px 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .ordinal-chip:hover { border-color: #C9A491; }
+  .ordinal-chip.on { background: #C15F3C; border-color: #C15F3C; color: #FAF9F5; }
+  .ordinal-chip:focus-visible { outline: 2px solid #C15F3C; outline-offset: 2px; }
+
   .heatmap-wrap {
     position: relative;
     aspect-ratio: 560 / 360;
@@ -398,8 +446,8 @@
     </div>
 
     <div class="panel timing-panel">
-      <h2>Time to complete each stage</h2>
-      <div id="timing-table"></div>
+      <h2>Time and clicks to complete each stage</h2>
+      <div class="events-scroll"><div id="timing-table"></div></div>
     </div>
 
     <div class="panels">
@@ -411,6 +459,17 @@
           <button class="heatmap-tab" data-step="shape">Shape</button>
           <button class="heatmap-tab" data-step="success">Success</button>
         </div>
+        <div class="heatmap-controls">
+          <div class="heatmap-control">
+            <label for="heatmap-session">Session</label>
+            <select id="heatmap-session"><option value="all">All sessions</option></select>
+          </div>
+          <div class="heatmap-control">
+            <label>Which click</label>
+            <div class="ordinal-chips" id="ordinal-chips"></div>
+          </div>
+        </div>
+
         <div class="heatmap-wrap">
           <iframe class="heatmap-frame" id="heatmap-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
           <canvas class="heatmap-canvas" id="heatmap-canvas" width="560" height="360"></canvas>
@@ -476,41 +535,66 @@
   }
 
   function renderTimingTable(sessions) {
-    const stageDurations = { number: [], letter: [], shape: [], total: [] };
+    const STEPS = ['number', 'letter', 'shape'];
+    const durations = { number: [], letter: [], shape: [], total: [] };
+    const clickCounts = { number: [], letter: [], shape: [], total: [] };
+
     sessions.forEach(s => {
       const picks = s.selections || [];
-      picks.forEach(p => stageDurations[p.step]?.push(p.duration_ms));
-      // Total is only meaningful for a run that finished all three steps.
+      const done = new Set(picks.map(p => p.step));
+      picks.forEach(p => durations[p.step]?.push(p.duration_ms));
+
+      // Clicks it took to pass a stage — only counted for stages the
+      // participant actually got past, otherwise an abandoned stage would
+      // drag the average down with a run that never finished it.
+      STEPS.forEach(step => {
+        if (!done.has(step)) return;
+        clickCounts[step].push(s.clicks.filter(c => c.step === step).length);
+      });
+
       if (picks.length === 3) {
-        stageDurations.total.push(picks.reduce((sum, p) => sum + p.duration_ms, 0));
+        durations.total.push(picks.reduce((sum, p) => sum + p.duration_ms, 0));
+        clickCounts.total.push(s.clicks.filter(c => STEPS.includes(c.step)).length);
       }
     });
 
     const rows = [
-      ['Number', stageDurations.number],
-      ['Letter', stageDurations.letter],
-      ['Shape', stageDurations.shape],
-      ['Total (start to finish)', stageDurations.total]
+      ['Number', 'number'],
+      ['Letter', 'letter'],
+      ['Shape', 'shape'],
+      ['Total (start to finish)', 'total']
     ];
 
     const container = document.getElementById('timing-table');
-    const anyData = rows.some(([, durations]) => durations.length > 0);
-
-    if (!anyData) {
+    if (!rows.some(([, k]) => durations[k].length > 0)) {
       container.innerHTML = '<div class="empty-note">No timing data yet.</div>';
       return;
     }
 
+    const fmtClicks = n => n == null ? '—' : n.toFixed(1);
+
     container.innerHTML = `
       <table>
         <thead>
-          <tr><th>Stage</th><th>Avg</th><th>Median</th><th>Min</th><th>Max</th><th>N</th></tr>
+          <tr>
+            <th>Stage</th>
+            <th>Avg time</th><th>Median time</th><th>Min</th><th>Max</th>
+            <th>Avg clicks</th><th>Median clicks</th>
+            <th>N</th>
+          </tr>
         </thead>
         <tbody>
-          ${rows.map(([label, durations]) => {
-            const s = stageStats(durations);
-            if (!s) return `<tr><td>${label}</td><td colspan="5" class="empty-note">No data</td></tr>`;
-            return `<tr><td>${label}</td><td>${fmtDuration(s.avg)}</td><td>${fmtDuration(s.median)}</td><td>${fmtDuration(s.min)}</td><td>${fmtDuration(s.max)}</td><td>${s.count}</td></tr>`;
+          ${rows.map(([label, key]) => {
+            const t = stageStats(durations[key]);
+            const c = stageStats(clickCounts[key]);
+            if (!t) return `<tr><td>${label}</td><td colspan="7" class="empty-note">No data</td></tr>`;
+            return `<tr>
+              <td>${label}</td>
+              <td>${fmtDuration(t.avg)}</td><td>${fmtDuration(t.median)}</td>
+              <td>${fmtDuration(t.min)}</td><td>${fmtDuration(t.max)}</td>
+              <td>${fmtClicks(c && c.avg)}</td><td>${fmtClicks(c && c.median)}</td>
+              <td>${t.count}</td>
+            </tr>`;
           }).join('')}
         </tbody>
       </table>`;
@@ -518,6 +602,62 @@
 
   let lastData = [];
   let currentHeatmapStep = 'number';
+  let heatmapSession = 'all';
+  let selectedOrdinals = new Set();   // empty means "no ordinal filter"
+
+  // Rebuild the session dropdown and the ordinal chips from whatever the
+  // current date/platform filters returned.
+  function rebuildHeatmapControls(sessions) {
+    const sel = document.getElementById('heatmap-session');
+    const withClicks = sessions.filter(s => s.clicks.length > 0);
+    if (!withClicks.some(s => s.session_id === heatmapSession)) heatmapSession = 'all';
+
+    sel.innerHTML = `<option value="all">All sessions (${withClicks.length})</option>`
+      + withClicks.map(s => {
+          const picks = ['number', 'letter', 'shape']
+            .map(k => s.selections.find(p => p.step === k)?.value)
+            .filter(Boolean).join(' · ');
+          const when = new Date(s.started_at).toLocaleString(undefined,
+            { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          return `<option value="${s.session_id}">${s.session_id.slice(0, 8)} — ${picks || 'no picks'} — ${when}</option>`;
+        }).join('');
+    sel.value = heatmapSession;
+
+    // Offer an ordinal only if some click actually carries it.
+    const maxSeq = sessions.reduce((m, s) =>
+      s.clicks.reduce((n, c) => Math.max(n, c.seq || 0), m), 0);
+    const chips = document.getElementById('ordinal-chips');
+    if (maxSeq === 0) {
+      chips.innerHTML = '<span class="empty-note">No ordering recorded yet</span>';
+      selectedOrdinals.clear();
+      return;
+    }
+    [...selectedOrdinals].forEach(n => { if (n > maxSeq) selectedOrdinals.delete(n); });
+    const ordinal = n => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
+    chips.innerHTML =
+      `<button class="ordinal-chip${selectedOrdinals.size === 0 ? ' on' : ''}" data-ord="all">All</button>`
+      + Array.from({ length: maxSeq }, (_, i) => i + 1).map(n =>
+          `<button class="ordinal-chip${selectedOrdinals.has(n) ? ' on' : ''}" data-ord="${n}">${ordinal(n)}</button>`
+        ).join('');
+  }
+
+  document.getElementById('heatmap-session').addEventListener('change', (e) => {
+    heatmapSession = e.target.value;
+    renderHeatmap();
+  });
+
+  document.getElementById('ordinal-chips').addEventListener('click', (e) => {
+    const btn = e.target.closest('.ordinal-chip');
+    if (!btn) return;
+    if (btn.dataset.ord === 'all') {
+      selectedOrdinals.clear();               // clearing = show every click
+    } else {
+      const n = Number(btn.dataset.ord);
+      selectedOrdinals.has(n) ? selectedOrdinals.delete(n) : selectedOrdinals.add(n);
+    }
+    rebuildHeatmapControls(lastData);
+    renderHeatmap();
+  });
 
   // Where the preview's content column sits, in canvas pixels. Clicks are
   // stored relative to that column, so we project them onto the preview's
@@ -547,8 +687,11 @@
 
     ctx.clearRect(0, 0, w, h);
 
-    const points = lastData.flatMap(s => (s.clicks || []))
-      .filter(c => c.step === currentHeatmapStep);
+    const points = lastData
+      .filter(s => heatmapSession === 'all' || s.session_id === heatmapSession)
+      .flatMap(s => (s.clicks || []))
+      .filter(c => c.step === currentHeatmapStep)
+      .filter(c => selectedOrdinals.size === 0 || selectedOrdinals.has(c.seq));
 
     document.getElementById('heatmap-empty').hidden = points.length > 0;
 
@@ -604,7 +747,7 @@
       .from('sessions')
       .select('session_id, user_id, platform, is_restart, started_at,'
             + ' selections(step, value, duration_ms, created_at),'
-            + ' clicks(step, x, y)')
+            + ' clicks(step, x, y, seq)')
       .order('started_at', { ascending: true })
       .limit(5000);
 
@@ -650,6 +793,7 @@
     renderTimingTable(sessions);
 
     lastData = sessions;
+    rebuildHeatmapControls(sessions);
     renderHeatmap();
 
     const recent = sessions

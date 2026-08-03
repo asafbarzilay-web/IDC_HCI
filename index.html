@@ -277,6 +277,13 @@
   let stepEnteredAt = Date.now();
   let sessionReady = null;
 
+  // Click ordinal per step, counted in the browser at click time so it
+  // reflects the true order the participant clicked — not the order the
+  // async inserts happened to reach the database. Counts persist across
+  // Back/forward within a run and reset only when a new run starts.
+  const newClickCounts = () => ({ number: 0, letter: 0, shape: 0, success: 0 });
+  let clickSeq = newClickCounts();
+
   if (PREVIEW_MODE) {
     state.step = PREVIEW_STEP_INDEX[previewStepParam];
     if (state.step === 3) {
@@ -372,6 +379,7 @@
     // as a restart so the dashboard can count them.
     sessionId = newId();
     sessionReady = startSession(true);
+    clickSeq = newClickCounts();
     state.step = 0;
     state.number = null;
     state.letter = null;
@@ -397,9 +405,11 @@
     // A zero-sized column (hidden tab, not yet laid out) would divide by
     // zero and store Infinity/NaN. Nothing meaningful to record — skip.
     if (!rect.width || !rect.height) return;
+    const step = currentStepLabel();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
-    write('clicks', { step: currentStepLabel(), x, y });
+    clickSeq[step] += 1;
+    write('clicks', { step, x, y, seq: clickSeq[step] });
   }, true);
 
   function render() {
