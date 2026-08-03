@@ -744,6 +744,10 @@
     const metrics = document.getElementById('stage-metrics');
     const choice = document.getElementById('stage-choice');
 
+    // Ordinals depend on the stage, so they're rebuilt here rather than at
+    // load — switching tabs has to re-offer the right set.
+    rebuildOrdinalOptions(lastData, step);
+
     if (!d) { metrics.innerHTML = ''; choice.innerHTML = ''; renderHeatmap(); return; }
 
     if (d.terminal) {
@@ -932,16 +936,21 @@
     }));
   }
 
-  // Ordinals come from the visible cohort, so the list reflects what can
-  // actually be shown — narrowing to one session shouldn't offer a 27th click.
-  function rebuildOrdinalOptions(sessions) {
-    const maxSeq = sessions.reduce((m, s) =>
-      s.clicks.reduce((n, c) => Math.max(n, c.seq || 0), m), 0);
-    const opts = Array.from({ length: maxSeq }, (_, i) => ({ value: String(i + 1), label: ordinalName(i + 1) }));
+  // Ordinals are scoped to the visible cohort *and* the stage on screen, so
+  // the list only ever offers clicks that could actually be plotted. Someone
+  // clicking ten times on one step shouldn't make the next step offer ten.
+  function rebuildOrdinalOptions(sessions, step) {
+    const stepClicks = sessions.flatMap(s => s.clicks.filter(c => c.step === step));
+
+    // Take the ordinals genuinely present rather than counting to the max, so
+    // a gap in the data shows up as a missing option instead of a dead choice.
+    const present = [...new Set(stepClicks.map(c => c.seq).filter(n => n != null))]
+      .sort((a, b) => a - b);
+    const opts = present.map(n => ({ value: String(n), label: ordinalName(n) }));
 
     // Older clicks were logged before ordinals were recorded. Surface them
     // as their own choice so they can be included or excluded deliberately.
-    if (sessions.some(s => s.clicks.some(c => c.seq == null))) {
+    if (stepClicks.some(c => c.seq == null)) {
       opts.push({ value: 'unknown', label: 'Unrecorded order (older data)' });
     }
     ordinalFilter.setOptions(opts);
@@ -1125,9 +1134,8 @@
 
     lastData = sessions;
     stageData = computeStages(sessions);
-    rebuildOrdinalOptions(sessions);
     renderTabLabels();
-    renderStage();
+    renderStage();   // rebuilds the ordinal options for the current stage
 
     // Say when the view is narrowed, so a small number never looks like
     // "we only collected this much".
