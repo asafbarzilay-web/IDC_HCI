@@ -408,8 +408,23 @@
     const step = currentStepLabel();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
+
+    // What the click actually landed on. Recorded here, where the answer
+    // is certain, rather than derived later from click counts — Back and
+    // Start over do something useful without being selections, so any
+    // count-based guess would misreport them as mis-clicks.
+    // Guard the target: closest() only exists on Elements, and a click can
+    // report a non-Element target. Throwing here would drop the click
+    // entirely — losing exactly the mis-click we're trying to measure.
+    const t = e.target instanceof Element ? e.target : null;
+    const hit = !t                          ? 'none'
+              : t.closest('.option-card')   ? 'option'
+              : t.closest('#back-btn')      ? 'back'
+              : t.closest('#restart-btn')   ? 'restart'
+              : 'none';
+
     clickSeq[step] += 1;
-    write('clicks', { step, x, y, seq: clickSeq[step] });
+    write('clicks', { step, x, y, seq: clickSeq[step], hit });
   }, true);
 
   function render() {
