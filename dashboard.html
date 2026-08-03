@@ -83,7 +83,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .stat-value.accent { color: #C15F3C; }
 
   .stat-sub {
     font-size: 12px;
@@ -486,10 +485,7 @@
       <div class="stat-card">
         <div class="stat-label">Completed</div>
         <div class="stat-value" id="stat-completed">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Completion rate</div>
-        <div class="stat-value accent" id="stat-rate">—</div>
+        <div class="stat-sub" id="stat-completed-sub"></div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Restarted</div>
@@ -940,7 +936,8 @@
     document.getElementById('stat-users').textContent = uniqueUsers;
     document.getElementById('stat-started').textContent = started.length;
     document.getElementById('stat-completed').textContent = completed.length;
-    document.getElementById('stat-rate').textContent = `${rate}%`;
+    document.getElementById('stat-completed-sub').textContent = started.length
+      ? `${rate}% of sessions started` : '';
     document.getElementById('stat-restarted').textContent = restarted.length;
     document.getElementById('stat-misclicks').textContent = misclicks;
     document.getElementById('stat-misclicks-sub').textContent = classified.length
