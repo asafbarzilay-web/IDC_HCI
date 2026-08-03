@@ -135,14 +135,17 @@
   .events-scroll { overflow-x: auto; }
 
   /* Stage metric strip: the funnel and timings for the selected stage. */
-  /* Bordered cells rather than a 1px-gap grid showing a background through:
-     when the last row is short, a background grid leaves a filled block. */
+  /* Column count is set per stage (--cols) so metrics land in even rows —
+     six become 3x2, four become a single row of four — instead of leaving
+     an orphan on the last row. */
   .stage-metrics {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
     gap: 10px;
-    margin-bottom: 22px;
+    margin-bottom: 18px;
   }
+  @media (max-width: 860px) { .stage-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 470px) { .stage-metrics { grid-template-columns: minmax(0, 1fr); } }
 
   .metric {
     background: #FAF9F5;
@@ -176,14 +179,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Choices beside the heatmap on wide screens, stacked when narrow. */
-  .stage-split {
-    display: grid;
-    grid-template-columns: minmax(210px, 0.62fr) minmax(300px, 1fr);
-    gap: 24px;
-    align-items: start;
+  /* Choices sit above the heatmap, full width, so the preview keeps the
+     entire panel width — squeezing it clips the screen being analysed. */
+  .stage-choice {
+    background: #FAF9F5;
+    border: 1px solid #E5E1D4;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
   }
-  @media (max-width: 780px) { .stage-split { grid-template-columns: 1fr; } }
 
   .stage-choice h3, .stage-heat h3 {
     font-size: 11px;
@@ -345,13 +349,17 @@
   .ms-option-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ms-none { font-size: 13px; color: #8A8578; padding: 6px; }
 
+  /* Fixed height rather than an aspect ratio: the app's content column caps
+     at 560px, so its height stops growing with width. A ratio on a wide
+     panel makes the frame too short and clips the screen being analysed. */
   .heatmap-wrap {
     position: relative;
-    aspect-ratio: 560 / 360;
+    height: 520px;
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid #E0DBCE;
   }
+  @media (max-width: 620px) { .heatmap-wrap { height: 430px; } }
   .heatmap-wrap .empty-note {
     position: absolute;
     inset: 0;
@@ -585,26 +593,24 @@
 
       <div class="stage-metrics" id="stage-metrics"></div>
 
-      <div class="stage-split">
-        <div class="stage-choice" id="stage-choice"></div>
+      <div class="stage-choice" id="stage-choice"></div>
 
-        <div class="stage-heat">
-          <div class="heatmap-controls">
-            <div class="heatmap-control">
-              <label id="ms-sessions-label">Sessions</label>
-              <div class="multiselect" id="ms-sessions"></div>
-            </div>
-            <div class="heatmap-control">
-              <label id="ms-ordinals-label">Which click</label>
-              <div class="multiselect" id="ms-ordinals"></div>
-            </div>
+      <div class="stage-heat">
+        <div class="heatmap-controls">
+          <div class="heatmap-control">
+            <label id="ms-sessions-label">Sessions</label>
+            <div class="multiselect" id="ms-sessions"></div>
           </div>
+          <div class="heatmap-control">
+            <label id="ms-ordinals-label">Which click</label>
+            <div class="multiselect" id="ms-ordinals"></div>
+          </div>
+        </div>
 
-          <div class="heatmap-wrap">
-            <iframe class="heatmap-frame" id="heatmap-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
-            <canvas class="heatmap-canvas" id="heatmap-canvas" width="560" height="360"></canvas>
-            <div class="empty-note" id="heatmap-empty" hidden>No clicks recorded yet for this step.</div>
-          </div>
+        <div class="heatmap-wrap">
+          <iframe class="heatmap-frame" id="heatmap-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
+          <canvas class="heatmap-canvas" id="heatmap-canvas"></canvas>
+          <div class="empty-note" id="heatmap-empty" hidden>No clicks recorded yet for this step.</div>
         </div>
       </div>
     </div>
@@ -731,6 +737,7 @@
     if (!d) { metrics.innerHTML = ''; choice.innerHTML = ''; renderHeatmap(); return; }
 
     if (d.terminal) {
+      metrics.style.setProperty('--cols', 4);   // four metrics, one clean row
       metrics.innerHTML =
         metric('Reached', d.reached, 'completed the flow') +
         metric('Restarted from here', d.restarted, d.reached ? `${Math.round(d.restarted / d.reached * 100)}% of finishers` : '') +
@@ -741,6 +748,7 @@
       return;
     }
 
+    metrics.style.setProperty('--cols', 3);    // six metrics, two rows of three
     metrics.innerHTML =
       metric('Reached', d.reached, 'saw this screen') +
       metric('Passed', d.passed, d.reached ? `${100 - d.dropRate}% of those who reached it` : '') +
@@ -930,6 +938,19 @@
 
   function renderHeatmap() {
     const canvas = document.getElementById('heatmap-canvas');
+
+    // Match the backing store to the displayed size. Left at a fixed
+    // resolution and stretched by CSS, the radial gradients would render as
+    // ellipses and the dots would misrepresent where people clicked.
+    const box = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const wantW = Math.max(1, Math.round(box.width * dpr));
+    const wantH = Math.max(1, Math.round(box.height * dpr));
+    if (canvas.width !== wantW || canvas.height !== wantH) {
+      canvas.width = wantW;
+      canvas.height = wantH;
+    }
+
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
 
@@ -954,7 +975,8 @@
       const y = col.top + p.y * col.height;
       // No clamping: margin clicks legitimately sit outside the column and
       // belong in the margin. The canvas clips anything past its edge.
-      const r = 30;
+      // Radius is in backing pixels, so scale it or dots shrink on retina.
+      const r = 30 * dpr;
       const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
       gradient.addColorStop(0, 'rgba(193,95,60,0.55)');
       gradient.addColorStop(0.5, 'rgba(193,95,60,0.22)');
