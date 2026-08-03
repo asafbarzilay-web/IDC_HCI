@@ -15,9 +15,18 @@
   // the dashboard on this same origin would attach the auth session to
   // the app's inserts too — and the RLS insert policy (anon only) would
   // silently reject every event from that browser.
-  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
+  //
+  // Analytics must never be able to break the app itself: if the library
+  // didn't load (offline, blocked CDN, opened as a file:// page), we fall
+  // back to null and the selector still works, just untracked.
+  var supabaseClient = null;
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+  } catch (err) {
+    console.warn('Analytics disabled — could not initialise Supabase:', err);
+  }
 </script>
 <style>
   * { box-sizing: border-box; }
@@ -264,7 +273,7 @@
   const PREVIEW_MODE = previewStepParam in PREVIEW_STEP_INDEX;
 
   const state = { step: 0, number: null, letter: null, shape: null };
-  let sessionId = crypto.randomUUID();
+  let sessionId = newId();
   let stepEnteredAt = Date.now();
   let sessionReady = null;
 
@@ -277,14 +286,31 @@
     }
   }
 
-  function getOrCreateUserId() {
-    const key = 'idc_hci_user_id';
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(key, id);
+  function newId() {
+    // crypto.randomUUID needs a secure context; fall back where it isn't.
+    try { return crypto.randomUUID(); }
+    catch {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
     }
-    return id;
+  }
+
+  function getOrCreateUserId() {
+    // localStorage can throw outright (private mode, blocked storage).
+    // Losing persistence is fine; crashing the app is not.
+    const key = 'idc_hci_user_id';
+    try {
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = newId();
+        localStorage.setItem(key, id);
+      }
+      return id;
+    } catch {
+      return newId();
+    }
   }
 
   function detectPlatform() {
@@ -305,20 +331,25 @@
   // exist first. startSession() keeps the in-flight insert as a promise
   // and every later write waits on it — no ordering races, no orphans.
   function startSession(isRestart) {
-    if (PREVIEW_MODE) return Promise.resolve();
+    if (PREVIEW_MODE || !supabaseClient) return Promise.resolve();
     return supabaseClient.from('sessions')
       .insert({ session_id: sessionId, user_id: userId, platform, is_restart: isRestart })
-      .then(({ error }) => { if (error) console.error('startSession failed', error); });
+      .then(({ error }) => { if (error) console.error('startSession failed', error); })
+      .catch(err => console.error('startSession failed', err));
   }
 
   // Capture the ids at call time: a restart swaps both sessionId and
   // sessionReady, and a write already in flight must keep its own pair.
   async function write(table, row) {
-    if (PREVIEW_MODE) return;
+    if (PREVIEW_MODE || !supabaseClient) return;
     const sid = sessionId, ready = sessionReady;
-    await ready;
-    const { error } = await supabaseClient.from(table).insert({ session_id: sid, ...row });
-    if (error) console.error(`insert into ${table} failed`, error);
+    try {
+      await ready;
+      const { error } = await supabaseClient.from(table).insert({ session_id: sid, ...row });
+      if (error) console.error(`insert into ${table} failed`, error);
+    } catch (err) {
+      console.error(`insert into ${table} failed`, err);
+    }
   }
 
   function select(key, value) {
@@ -339,7 +370,7 @@
   function reset() {
     // Start over begins a genuinely new attempt: new session row, flagged
     // as a restart so the dashboard can count them.
-    sessionId = crypto.randomUUID();
+    sessionId = newId();
     sessionReady = startSession(true);
     state.step = 0;
     state.number = null;
@@ -432,11 +463,13 @@
 
   document.getElementById('back-btn').addEventListener('click', back);
 
-  // Open the session immediately (skipped in preview mode, so the
-  // dashboard's four preview frames never create phantom sessions).
-  sessionReady = startSession(false);
-
+  // Paint first, then start tracking — the selector must appear even if
+  // analytics is unavailable.
   render();
+
+  // Open the session (skipped in preview mode, so the dashboard's four
+  // preview frames never create phantom sessions).
+  sessionReady = startSession(false);
 </script>
 </body>
 </html>
