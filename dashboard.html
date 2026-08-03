@@ -241,24 +241,27 @@
     background: #F0EEE6;
   }
 
-  .heatmap-controls {
+  .heat-header {
     display: flex;
-    gap: 20px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
     flex-wrap: wrap;
-    align-items: flex-start;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
+  .heat-header h3 { margin: 0; }
+
+  .heat-header-control { display: flex; align-items: center; gap: 10px; }
 
   /* Direct child only — otherwise this leaks into the checkbox labels
      inside the dropdown panel and uppercases them. */
-  .heatmap-control > label {
-    display: block;
+  .heat-header-control > label {
     font-size: 11px;
     font-weight: 500;
     color: #8A8578;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin-bottom: 6px;
+    white-space: nowrap;
   }
 
   /* Multi-select dropdown: a summary button that opens a checkbox list.
@@ -539,6 +542,12 @@
           <option value="mobile">Mobile</option>
         </select>
       </div>
+      <!-- Sessions is a cohort filter like Platform, not a heatmap control:
+           it narrows every number on the page, so it belongs here. -->
+      <div class="filter-field">
+        <label id="ms-sessions-label">Sessions</label>
+        <div class="multiselect" id="ms-sessions"></div>
+      </div>
       <button class="clear-filters-btn" id="clear-filters-btn">Clear filters</button>
     </div>
 
@@ -596,13 +605,14 @@
       <div class="stage-choice" id="stage-choice"></div>
 
       <div class="stage-heat">
-        <div class="heatmap-controls">
-          <div class="heatmap-control">
-            <label id="ms-sessions-label">Sessions</label>
-            <div class="multiselect" id="ms-sessions"></div>
-          </div>
-          <div class="heatmap-control">
-            <label id="ms-ordinals-label">Which click</label>
+        <!-- The ordinal filter only changes which dots are drawn, so it sits
+             with the heatmap. It has to be above the frame rather than inside
+             it: .heatmap-wrap clips its contents, which would cut off the
+             open dropdown panel. -->
+        <div class="heat-header">
+          <h3>Click heatmap</h3>
+          <div class="heat-header-control">
+            <label id="ms-ordinals-label" for="ms-ordinals">Which click</label>
             <div class="multiselect" id="ms-ordinals"></div>
           </div>
         </div>
@@ -777,7 +787,8 @@
     });
   }
 
-  let lastData = [];
+  let allSessions = [];   // everything the date/platform query returned
+  let lastData = [];      // the session cohort currently on screen
   let stageData = {};
   let currentHeatmapStep = 'number';
 
@@ -864,10 +875,24 @@
         // arriving sessions/ordinals are included rather than silently
         // filtered out; otherwise preserve the user's explicit choice.
         const wasAll = options.length === 0 || selected.size === options.length;
+        const hadSelection = selected.size > 0;
         options = list;
         const valid = new Set(list.map(o => o.value));
         [...selected].forEach(v => { if (!valid.has(v)) selected.delete(v); });
         if (wasAll) list.forEach(o => selected.add(o.value));
+        // If narrowing the date range wiped out everything the user had
+        // picked, fall back to all rather than leaving a blank dashboard
+        // with no visible reason. A deliberate "Clear" still stays empty.
+        if (hadSelection && selected.size === 0) list.forEach(o => selected.add(o.value));
+        paintLabel();
+        if (!panel.hidden) paintOptions();
+      },
+      // Select everything without firing onChange — the caller is already
+      // about to re-render. Leaving it "all" also makes the next setOptions
+      // treat newly arrived options as selected.
+      selectAll() {
+        selected.clear();
+        options.forEach(o => selected.add(o.value));
         paintLabel();
         if (!panel.hidden) paintOptions();
       },
@@ -876,11 +901,14 @@
     };
   }
 
+  // Sessions is a cohort filter: changing it re-derives every number on the
+  // page from data already in hand, so it recomputes rather than re-fetching.
   const sessionFilter = createMultiSelect('ms-sessions', {
     allLabel: 'All sessions', noneLabel: 'No sessions', searchable: true,
-    onChange: () => renderHeatmap()
+    onChange: () => applyFilters()
   });
 
+  // Ordinals only decide which dots are drawn — nothing else moves.
   const ordinalFilter = createMultiSelect('ms-ordinals', {
     allLabel: 'All clicks', noneLabel: 'No clicks yet',
     onChange: () => renderHeatmap()
@@ -891,18 +919,22 @@
     return `${n}${s} click`;
   };
 
-  // Repopulate both filters from whatever the date/platform filters returned.
-  function rebuildHeatmapControls(sessions) {
-    const withClicks = sessions.filter(s => s.clicks.length > 0);
-    sessionFilter.setOptions(withClicks.map(s => {
-      const picks = ['number', 'letter', 'shape']
+  // Built from everything the date/platform query returned, so any session
+  // stays re-selectable even while the cohort is narrowed to one.
+  function rebuildSessionOptions(sessions) {
+    sessionFilter.setOptions(sessions.map(s => {
+      const picks = STEPS
         .map(k => s.selections.find(p => p.step === k)?.value)
         .filter(Boolean).join(' · ');
       const when = new Date(s.started_at).toLocaleString(undefined,
         { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       return { value: s.session_id, label: `${s.session_id.slice(0, 8)} — ${picks || 'no picks'} — ${when}` };
     }));
+  }
 
+  // Ordinals come from the visible cohort, so the list reflects what can
+  // actually be shown — narrowing to one session shouldn't offer a 27th click.
+  function rebuildOrdinalOptions(sessions) {
     const maxSeq = sessions.reduce((m, s) =>
       s.clicks.reduce((n, c) => Math.max(n, c.seq || 0), m), 0);
     const opts = Array.from({ length: maxSeq }, (_, i) => ({ value: String(i + 1), label: ordinalName(i + 1) }));
@@ -956,8 +988,9 @@
 
     ctx.clearRect(0, 0, w, h);
 
+    // lastData is already the selected cohort — the session filter is applied
+    // once upstream so the dots and the numbers can never disagree.
     const points = lastData
-      .filter(s => sessionFilter.has(s.session_id))
       .flatMap(s => (s.clicks || []))
       .filter(c => c.step === currentHeatmapStep)
       // Clicks predating the seq column carry no ordinal. They get their own
@@ -1038,7 +1071,15 @@
       return;
     }
 
-    const sessions = data.map(s => ({ ...s, selections: s.selections || [], clicks: s.clicks || [] }));
+    allSessions = data.map(s => ({ ...s, selections: s.selections || [], clicks: s.clicks || [] }));
+    rebuildSessionOptions(allSessions);
+    applyFilters();
+  }
+
+  // Everything below derives from data already fetched, so narrowing the
+  // session cohort recomputes in place instead of hitting the network.
+  function applyFilters() {
+    const sessions = allSessions.filter(s => sessionFilter.has(s.session_id));
 
     // "Started" means the visitor actually made a pick; a session with no
     // selections is someone who opened the page and left.
@@ -1084,13 +1125,16 @@
 
     lastData = sessions;
     stageData = computeStages(sessions);
-    rebuildHeatmapControls(sessions);
+    rebuildOrdinalOptions(sessions);
     renderTabLabels();
     renderStage();
 
-    const clickCount = allClicks.length;
+    // Say when the view is narrowed, so a small number never looks like
+    // "we only collected this much".
+    const narrowed = sessions.length !== allSessions.length
+      ? ` (filtered from ${allSessions.length})` : '';
     document.getElementById('updated-label').textContent =
-      `Updated ${new Date().toLocaleTimeString()} · ${sessions.length} sessions · ${clickCount} clicks`;
+      `Updated ${new Date().toLocaleTimeString()} · ${sessions.length} sessions${narrowed} · ${allClicks.length} clicks`;
   }
 
   document.getElementById('refresh-btn').addEventListener('click', loadDashboard);
@@ -1101,6 +1145,8 @@
     document.getElementById('filter-from').value = '';
     document.getElementById('filter-to').value = '';
     document.getElementById('filter-platform').value = 'all';
+    // Sessions is one of the filters now, so clearing has to reset it too.
+    sessionFilter.selectAll();
     loadDashboard();
   });
 
