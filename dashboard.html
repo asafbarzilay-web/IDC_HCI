@@ -176,7 +176,9 @@
     margin-bottom: 16px;
   }
 
-  .heatmap-control label {
+  /* Direct child only — otherwise this leaks into the checkbox labels
+     inside the dropdown panel and uppercases them. */
+  .heatmap-control > label {
     display: block;
     font-size: 11px;
     font-weight: 500;
@@ -186,35 +188,93 @@
     margin-bottom: 6px;
   }
 
-  .heatmap-control select {
+  /* Multi-select dropdown: a summary button that opens a checkbox list.
+     Used for both session and click-ordinal filtering — a flat chip row
+     stops working once there are dozens of options. */
+  .multiselect { position: relative; }
+
+  .ms-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+    min-width: 220px;
+    max-width: 300px;
     font-family: inherit;
     font-size: 13px;
-    padding: 6px 10px;
+    text-align: left;
+    padding: 7px 10px;
     border: 1px solid #D8D3C6;
     border-radius: 8px;
     background: #FFFFFF;
     color: #29261F;
-    max-width: 260px;
+    cursor: pointer;
   }
-  .heatmap-control select:focus { outline: 2px solid #C15F3C; outline-offset: 1px; }
+  .ms-toggle:hover { border-color: #C9A491; }
+  .ms-toggle:focus-visible { outline: 2px solid #C15F3C; outline-offset: 1px; }
+  .ms-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ms-caret { color: #8A8578; font-size: 10px; flex-shrink: 0; }
 
-  .ordinal-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ms-panel {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 260px;
+    max-width: 340px;
+    background: #FFFFFF;
+    border: 1px solid #D8D3C6;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(41,38,31,0.12);
+    padding: 8px;
+  }
 
-  .ordinal-chip {
+  .ms-search {
+    width: 100%;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 9px;
+    border: 1px solid #E0DBCE;
+    border-radius: 7px;
+    margin-bottom: 6px;
+  }
+  .ms-search:focus { outline: 2px solid #C15F3C; outline-offset: 1px; }
+
+  .ms-actions {
+    display: flex;
+    gap: 12px;
+    padding: 0 4px 7px;
+    border-bottom: 1px solid #F0EEE6;
+    margin-bottom: 5px;
+  }
+  .ms-actions button {
     font-family: inherit;
     font-size: 12px;
-    font-weight: 500;
-    color: #6B665A;
-    background: #F0EEE6;
-    border: 1px solid #E0DBCE;
-    border-radius: 999px;
-    padding: 5px 11px;
+    color: #C15F3C;
+    background: none;
+    border: none;
+    padding: 0;
     cursor: pointer;
-    transition: all 0.15s ease;
+    text-decoration: underline;
   }
-  .ordinal-chip:hover { border-color: #C9A491; }
-  .ordinal-chip.on { background: #C15F3C; border-color: #C15F3C; color: #FAF9F5; }
-  .ordinal-chip:focus-visible { outline: 2px solid #C15F3C; outline-offset: 2px; }
+  .ms-actions button:hover { color: #A84F30; }
+
+  .ms-options { max-height: 240px; overflow-y: auto; }
+
+  .ms-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    line-height: 1.35;
+  }
+  .ms-option:hover { background: #F6F4EE; }
+  .ms-option input { accent-color: #C15F3C; cursor: pointer; flex-shrink: 0; }
+  .ms-option-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ms-none { font-size: 13px; color: #8A8578; padding: 6px; }
 
   .heatmap-wrap {
     position: relative;
@@ -461,12 +521,12 @@
         </div>
         <div class="heatmap-controls">
           <div class="heatmap-control">
-            <label for="heatmap-session">Session</label>
-            <select id="heatmap-session"><option value="all">All sessions</option></select>
+            <label id="ms-sessions-label">Sessions</label>
+            <div class="multiselect" id="ms-sessions"></div>
           </div>
           <div class="heatmap-control">
-            <label>Which click</label>
-            <div class="ordinal-chips" id="ordinal-chips"></div>
+            <label id="ms-ordinals-label">Which click</label>
+            <div class="multiselect" id="ms-ordinals"></div>
           </div>
         </div>
 
@@ -602,62 +662,135 @@
 
   let lastData = [];
   let currentHeatmapStep = 'number';
-  let heatmapSession = 'all';
-  let selectedOrdinals = new Set();   // empty means "no ordinal filter"
 
-  // Rebuild the session dropdown and the ordinal chips from whatever the
-  // current date/platform filters returned.
-  function rebuildHeatmapControls(sessions) {
-    const sel = document.getElementById('heatmap-session');
-    const withClicks = sessions.filter(s => s.clicks.length > 0);
-    if (!withClicks.some(s => s.session_id === heatmapSession)) heatmapSession = 'all';
+  // Reusable multi-select: a summary button that opens a checkbox list.
+  // Selection is always explicit (every box ticked = everything shown), so
+  // the control reads the same way whether there are 3 options or 300.
+  function createMultiSelect(hostId, { allLabel, noneLabel, searchable = false, onChange }) {
+    const host = document.getElementById(hostId);
+    host.innerHTML = `
+      <button type="button" class="ms-toggle" aria-haspopup="true" aria-expanded="false">
+        <span class="ms-label"></span><span class="ms-caret" aria-hidden="true">▼</span>
+      </button>
+      <div class="ms-panel" hidden>
+        ${searchable ? '<input type="search" class="ms-search" placeholder="Search…" aria-label="Filter options">' : ''}
+        <div class="ms-actions">
+          <button type="button" data-act="all">Select all</button>
+          <button type="button" data-act="none">Clear</button>
+        </div>
+        <div class="ms-options"></div>
+      </div>`;
 
-    sel.innerHTML = `<option value="all">All sessions (${withClicks.length})</option>`
-      + withClicks.map(s => {
-          const picks = ['number', 'letter', 'shape']
-            .map(k => s.selections.find(p => p.step === k)?.value)
-            .filter(Boolean).join(' · ');
-          const when = new Date(s.started_at).toLocaleString(undefined,
-            { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-          return `<option value="${s.session_id}">${s.session_id.slice(0, 8)} — ${picks || 'no picks'} — ${when}</option>`;
-        }).join('');
-    sel.value = heatmapSession;
+    const toggle = host.querySelector('.ms-toggle');
+    const panel = host.querySelector('.ms-panel');
+    const labelEl = host.querySelector('.ms-label');
+    const optionsEl = host.querySelector('.ms-options');
+    const searchEl = host.querySelector('.ms-search');
 
-    // Offer an ordinal only if some click actually carries it.
-    const maxSeq = sessions.reduce((m, s) =>
-      s.clicks.reduce((n, c) => Math.max(n, c.seq || 0), m), 0);
-    const chips = document.getElementById('ordinal-chips');
-    if (maxSeq === 0) {
-      chips.innerHTML = '<span class="empty-note">No ordering recorded yet</span>';
-      selectedOrdinals.clear();
-      return;
+    let options = [];                 // [{value, label}]
+    const selected = new Set();       // explicit set of chosen values
+
+    function paintLabel() {
+      if (!options.length) { labelEl.textContent = noneLabel; return; }
+      if (selected.size === options.length) { labelEl.textContent = `${allLabel} (${options.length})`; return; }
+      if (selected.size === 0) { labelEl.textContent = 'None selected'; return; }
+      if (selected.size <= 2) {
+        labelEl.textContent = options.filter(o => selected.has(o.value)).map(o => o.label).join(', ');
+        return;
+      }
+      labelEl.textContent = `${selected.size} of ${options.length} selected`;
     }
-    [...selectedOrdinals].forEach(n => { if (n > maxSeq) selectedOrdinals.delete(n); });
-    const ordinal = n => n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
-    chips.innerHTML =
-      `<button class="ordinal-chip${selectedOrdinals.size === 0 ? ' on' : ''}" data-ord="all">All</button>`
-      + Array.from({ length: maxSeq }, (_, i) => i + 1).map(n =>
-          `<button class="ordinal-chip${selectedOrdinals.has(n) ? ' on' : ''}" data-ord="${n}">${ordinal(n)}</button>`
-        ).join('');
+
+    function paintOptions() {
+      const q = (searchEl?.value || '').trim().toLowerCase();
+      const visible = q ? options.filter(o => o.label.toLowerCase().includes(q)) : options;
+      optionsEl.innerHTML = visible.length
+        ? visible.map(o => `
+            <label class="ms-option">
+              <input type="checkbox" value="${o.value}" ${selected.has(o.value) ? 'checked' : ''}>
+              <span class="ms-option-text" title="${o.label}">${o.label}</span>
+            </label>`).join('')
+        : '<div class="ms-none">No matches</div>';
+    }
+
+    function open(next) {
+      panel.hidden = !next;
+      toggle.setAttribute('aria-expanded', String(next));
+      if (next) { paintOptions(); searchEl?.focus(); }
+    }
+
+    toggle.addEventListener('click', () => open(panel.hidden));
+    document.addEventListener('click', (e) => { if (!host.contains(e.target)) open(false); });
+    host.addEventListener('keydown', (e) => { if (e.key === 'Escape') { open(false); toggle.focus(); } });
+    searchEl?.addEventListener('input', paintOptions);
+
+    optionsEl.addEventListener('change', (e) => {
+      const box = e.target.closest('input[type="checkbox"]');
+      if (!box) return;
+      box.checked ? selected.add(box.value) : selected.delete(box.value);
+      paintLabel();
+      onChange();
+    });
+
+    host.querySelector('.ms-actions').addEventListener('click', (e) => {
+      const act = e.target.dataset.act;
+      if (!act) return;
+      selected.clear();
+      if (act === 'all') options.forEach(o => selected.add(o.value));
+      paintOptions(); paintLabel(); onChange();
+    });
+
+    return {
+      setOptions(list) {
+        // Keep "everything selected" sticky across refreshes, so newly
+        // arriving sessions/ordinals are included rather than silently
+        // filtered out; otherwise preserve the user's explicit choice.
+        const wasAll = options.length === 0 || selected.size === options.length;
+        options = list;
+        const valid = new Set(list.map(o => o.value));
+        [...selected].forEach(v => { if (!valid.has(v)) selected.delete(v); });
+        if (wasAll) list.forEach(o => selected.add(o.value));
+        paintLabel();
+        if (!panel.hidden) paintOptions();
+      },
+      has: (value) => selected.has(String(value)),
+      isEmpty: () => options.length === 0
+    };
   }
 
-  document.getElementById('heatmap-session').addEventListener('change', (e) => {
-    heatmapSession = e.target.value;
-    renderHeatmap();
+  const sessionFilter = createMultiSelect('ms-sessions', {
+    allLabel: 'All sessions', noneLabel: 'No sessions', searchable: true,
+    onChange: () => renderHeatmap()
   });
 
-  document.getElementById('ordinal-chips').addEventListener('click', (e) => {
-    const btn = e.target.closest('.ordinal-chip');
-    if (!btn) return;
-    if (btn.dataset.ord === 'all') {
-      selectedOrdinals.clear();               // clearing = show every click
-    } else {
-      const n = Number(btn.dataset.ord);
-      selectedOrdinals.has(n) ? selectedOrdinals.delete(n) : selectedOrdinals.add(n);
-    }
-    rebuildHeatmapControls(lastData);
-    renderHeatmap();
+  const ordinalFilter = createMultiSelect('ms-ordinals', {
+    allLabel: 'All clicks', noneLabel: 'No clicks yet',
+    onChange: () => renderHeatmap()
   });
+
+  const ordinalName = n => {
+    const s = ['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th';
+    return `${n}${s} click`;
+  };
+
+  // Repopulate both filters from whatever the date/platform filters returned.
+  function rebuildHeatmapControls(sessions) {
+    const withClicks = sessions.filter(s => s.clicks.length > 0);
+    sessionFilter.setOptions(withClicks.map(s => {
+      const picks = ['number', 'letter', 'shape']
+        .map(k => s.selections.find(p => p.step === k)?.value)
+        .filter(Boolean).join(' · ');
+      const when = new Date(s.started_at).toLocaleString(undefined,
+        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return { value: s.session_id, label: `${s.session_id.slice(0, 8)} — ${picks || 'no picks'} — ${when}` };
+    }));
+
+    const maxSeq = sessions.reduce((m, s) =>
+      s.clicks.reduce((n, c) => Math.max(n, c.seq || 0), m), 0);
+    ordinalFilter.setOptions(
+      Array.from({ length: maxSeq }, (_, i) => ({ value: String(i + 1), label: ordinalName(i + 1) }))
+    );
+  }
 
   // Where the preview's content column sits, in canvas pixels. Clicks are
   // stored relative to that column, so we project them onto the preview's
@@ -688,10 +821,12 @@
     ctx.clearRect(0, 0, w, h);
 
     const points = lastData
-      .filter(s => heatmapSession === 'all' || s.session_id === heatmapSession)
+      .filter(s => sessionFilter.has(s.session_id))
       .flatMap(s => (s.clicks || []))
       .filter(c => c.step === currentHeatmapStep)
-      .filter(c => selectedOrdinals.size === 0 || selectedOrdinals.has(c.seq));
+      // Clicks predating the seq column have no ordinal; keep them visible
+      // unless the ordinal filter is actually being used to narrow things.
+      .filter(c => ordinalFilter.isEmpty() || c.seq == null || ordinalFilter.has(c.seq));
 
     document.getElementById('heatmap-empty').hidden = points.length > 0;
 
