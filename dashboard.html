@@ -275,6 +275,16 @@
 
   .author-actions { display: flex; align-items: center; gap: 16px; }
 
+  .task-status {
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #F6E9E1;
+    border: 1px solid #E8CDB9;
+    margin-bottom: 12px;
+  }
+  .task-status.muted { background: #F0EEE6; border-color: #E5E1D4; color: #6B665A; }
+
   .task-row {
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     padding: 12px 14px; border: 1px solid #E5E1D4; border-radius: 10px;
@@ -1416,10 +1426,14 @@
 
     const btn = document.getElementById('save-task-btn');
     btn.disabled = true;
+    // Never activate on save. Authoring a task and putting it in front of
+    // participants are separate decisions, and the second one should be
+    // deliberate — a task going live as a side effect of being written is
+    // how a half-finished task ends up in front of a real participant.
     const { error } = await supabaseClient.from('tasks').insert({
       task_id: crypto.randomUUID(), name, goal_text: goal,
       path: authoredPath.map(({ step, value }) => ({ step, value })),
-      binding, is_active: tasks.length === 0   // first task authored goes live
+      binding, is_active: false
     });
     btn.disabled = false;
 
@@ -1443,7 +1457,14 @@
       return;
     }
 
-    list.innerHTML = tasks.map(t => {
+    // No task active is a legitimate, and the default, state: participants
+    // just use the flow freely. Say so rather than leaving it implied.
+    const live = tasks.find(t => t.is_active);
+    const banner = live
+      ? `<div class="task-status">Participants are being asked: <b>${live.name}</b></div>`
+      : `<div class="task-status muted">No task is active — participants use the flow freely.</div>`;
+
+    list.innerHTML = banner + tasks.map(t => {
       const route = (t.path || []).map(p =>
         (t.binding || []).includes(p.step) ? `<b>${p.value}</b>` : p.value).join(' → ');
       const kind = (t.binding || []).length === (t.path || []).length
@@ -1452,20 +1473,25 @@
         <span class="task-name">${t.name}</span>
         <span class="task-detail">${route} <span style="color:#8A8578">— ${kind}</span></span>
         ${t.is_active
-          ? '<span class="task-badge">Active</span>'
+          ? `<span class="task-badge">Active</span>
+             <button class="signout-btn" data-deactivate="${t.task_id}">Stand down</button>`
           : `<button class="signout-btn" data-activate="${t.task_id}">Make active</button>`}
       </div>`;
     }).join('');
   }
 
   document.getElementById('task-list').addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-activate]');
-    if (!btn) return;
+    const on  = e.target.closest('[data-activate]');
+    const off = e.target.closest('[data-deactivate]');
+    if (!on && !off) return;
+    const btn = on || off;
     btn.disabled = true;
-    // A trigger stands the others down, so only this update is needed.
+    // Activating relies on the trigger to stand the others down; standing one
+    // down needs its own path, or there would be no way back to "no task".
     const { error } = await supabaseClient.from('tasks')
-      .update({ is_active: true }).eq('task_id', btn.dataset.activate);
-    if (error) console.error('activate task failed', error);
+      .update({ is_active: !!on })
+      .eq('task_id', btn.dataset.activate || btn.dataset.deactivate);
+    if (error) console.error('task activation failed', error);
     loadTasks();
   });
 
