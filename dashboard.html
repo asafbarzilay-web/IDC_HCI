@@ -198,6 +198,97 @@
     margin: 0 0 12px;
   }
 
+  /* ---- Tasks ---- */
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .panel-head h2 { margin: 0; }
+
+  .author-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(300px, 1fr);
+    gap: 26px;
+    align-items: start;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid #E5E1D4;
+  }
+  @media (max-width: 900px) { .author-grid { grid-template-columns: 1fr; } }
+
+  .author-grid h3 {
+    font-size: 11px; font-weight: 500; color: #8A8578;
+    letter-spacing: 0.05em; text-transform: uppercase; margin: 0 0 6px;
+  }
+  .author-hint { font-size: 13px; color: #8A8578; margin: 0 0 12px; }
+
+  .author-frame-wrap {
+    height: 460px;
+    border: 1px solid #E0DBCE;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #F0EEE6;
+  }
+  #author-frame { width: 100%; height: 100%; border: none; display: block; }
+
+  .author-path { margin-bottom: 18px; }
+
+  .path-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #E5E1D4;
+    border-radius: 10px;
+    background: #FAF9F5;
+    margin-bottom: 8px;
+  }
+  .path-step input { accent-color: #C15F3C; cursor: pointer; flex-shrink: 0; }
+  .path-step-name {
+    font-size: 11px; color: #8A8578; text-transform: uppercase;
+    letter-spacing: 0.05em; width: 56px; flex-shrink: 0;
+  }
+  .path-step-value {
+    font-family: Newsreader, Georgia, serif; font-size: 19px; flex: 1;
+  }
+  .path-step-role { font-size: 12px; color: #8A8578; }
+  .path-step.free { opacity: 0.62; }
+  .path-step.free .path-step-role { font-style: italic; }
+
+  .author-field { margin-bottom: 12px; }
+  .author-field label {
+    display: block; font-size: 11px; font-weight: 500; color: #8A8578;
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px;
+  }
+  .author-field input, .author-field textarea {
+    width: 100%; font-family: inherit; font-size: 14px; padding: 9px 11px;
+    border: 1px solid #D8D3C6; border-radius: 8px; background: #fff;
+    color: #29261F; resize: vertical;
+  }
+  .author-field input:focus, .author-field textarea:focus {
+    outline: 2px solid #C15F3C; outline-offset: 1px;
+  }
+
+  .author-actions { display: flex; align-items: center; gap: 16px; }
+
+  .task-row {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 14px; border: 1px solid #E5E1D4; border-radius: 10px;
+    background: #FAF9F5; margin-bottom: 8px;
+  }
+  .task-row.active { border-color: #C15F3C; background: #F6E9E1; }
+  .task-name { font-weight: 600; font-size: 14px; }
+  .task-detail { font-size: 13px; color: #6B665A; flex: 1; min-width: 200px; }
+  .task-detail b { color: #29261F; font-weight: 600; }
+  .task-badge {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: #C15F3C;
+  }
+
   .heatmap-tab .tab-metric {
     opacity: 0.72;
     font-weight: 400;
@@ -621,6 +712,51 @@
           <iframe class="heatmap-frame" id="heatmap-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
           <canvas class="heatmap-canvas" id="heatmap-canvas"></canvas>
           <div class="empty-note" id="heatmap-empty" hidden>No clicks recorded yet for this step.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tasks are authored by demonstration: click the route in the real app
+         and mark which steps have to match. Saving needs a signed-in author,
+         which is why this lives in the dashboard rather than the app. -->
+    <div class="panel" id="tasks-panel">
+      <header class="panel-head">
+        <h2>Tasks</h2>
+        <button class="refresh-btn" id="new-task-btn">Define a task</button>
+      </header>
+
+      <div id="task-list"></div>
+
+      <div id="task-author" hidden>
+        <div class="author-grid">
+          <div>
+            <h3>Demonstrate the route</h3>
+            <p class="author-hint">Click through the app as the participant would. Nothing here is recorded as study data.</p>
+            <div class="author-frame-wrap">
+              <iframe id="author-frame" title="Task authoring"></iframe>
+            </div>
+          </div>
+
+          <div>
+            <h3>What counts as success</h3>
+            <p class="author-hint">Tick the steps that must match. Untick one to leave it free — any answer there is fine.</p>
+            <div id="author-path" class="author-path"></div>
+
+            <div class="author-field">
+              <label for="task-name">Task name</label>
+              <input type="text" id="task-name" placeholder="e.g. Find the triangle">
+            </div>
+            <div class="author-field">
+              <label for="task-goal">What the participant reads</label>
+              <textarea id="task-goal" rows="2" placeholder="e.g. Select the triangle."></textarea>
+            </div>
+
+            <div id="author-error"></div>
+            <div class="author-actions">
+              <button class="login-btn" id="save-task-btn" style="width:auto">Save task</button>
+              <button class="signout-btn" id="cancel-task-btn">Cancel</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1186,6 +1322,153 @@
     loadDashboard();
   });
 
+  // ---- Tasks: authored by demonstration ----------------------------------
+  //
+  // The app is embedded in author mode and reports each choice up to here.
+  // Demonstrating is the only way a task can reference a step or option that
+  // genuinely exists — a hand-written definition drifts the moment the flow
+  // changes, and nothing would flag it.
+  //
+  // A "specific path" task and a "reach the goal" task are the same record:
+  // the demonstrated route plus which steps bind. Exact path binds all of
+  // them, a goal binds only the ones you care about.
+
+  let authoredPath = [];      // [{ step, value, binding }] in demonstration order
+  let tasks = [];
+
+  function renderAuthoredPath() {
+    const el = document.getElementById('author-path');
+    if (!authoredPath.length) {
+      el.innerHTML = '<div class="empty-note">Click through the app to capture a route.</div>';
+      return;
+    }
+    el.innerHTML = authoredPath.map((p, i) => `
+      <label class="path-step${p.binding ? '' : ' free'}">
+        <input type="checkbox" data-i="${i}" ${p.binding ? 'checked' : ''}>
+        <span class="path-step-name">${p.step}</span>
+        <span class="path-step-value">${p.value}</span>
+        <span class="path-step-role">${p.binding ? 'must match' : 'any answer'}</span>
+      </label>`).join('');
+  }
+
+  document.getElementById('author-path').addEventListener('change', (e) => {
+    const box = e.target.closest('input[type="checkbox"]');
+    if (!box) return;
+    const row = box.closest('.path-step');
+    authoredPath[Number(box.dataset.i)].binding = box.checked;
+    // Update this row in place. Re-rendering the list would replace the very
+    // checkbox being used and throw away keyboard focus mid-interaction.
+    row.classList.toggle('free', !box.checked);
+    row.querySelector('.path-step-role').textContent = box.checked ? 'must match' : 'any answer';
+  });
+
+  // Only trust messages from this origin and from the frame we embedded.
+  window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin) return;
+    const frame = document.getElementById('author-frame');
+    if (!frame || e.source !== frame.contentWindow) return;
+    const msg = e.data;
+    if (!msg || msg.source !== 'idc-hci-author') return;
+
+    if (msg.type === 'reset') { authoredPath = []; renderAuthoredPath(); return; }
+    if (msg.type !== 'choice') return;
+
+    // Re-answering a step during the demonstration replaces that step rather
+    // than appending, so the captured route is what you settled on.
+    const existing = authoredPath.find(p => p.step === msg.step);
+    if (existing) existing.value = msg.value;
+    else authoredPath.push({ step: msg.step, value: msg.value, binding: true });
+    renderAuthoredPath();
+  });
+
+  function openAuthoring() {
+    authoredPath = [];
+    renderAuthoredPath();
+    document.getElementById('task-name').value = '';
+    document.getElementById('task-goal').value = '';
+    document.getElementById('author-error').innerHTML = '';
+    // Reload the frame each time so the demonstration starts from step one.
+    document.getElementById('author-frame').src = `index.html?authorMode=1&t=${Date.now()}`;
+    document.getElementById('task-author').hidden = false;
+  }
+
+  function closeAuthoring() {
+    document.getElementById('task-author').hidden = true;
+    document.getElementById('author-frame').src = 'about:blank';
+  }
+
+  document.getElementById('new-task-btn').addEventListener('click', openAuthoring);
+  document.getElementById('cancel-task-btn').addEventListener('click', closeAuthoring);
+
+  document.getElementById('save-task-btn').addEventListener('click', async () => {
+    const errEl = document.getElementById('author-error');
+    const name = document.getElementById('task-name').value.trim();
+    const goal = document.getElementById('task-goal').value.trim();
+    const binding = authoredPath.filter(p => p.binding).map(p => p.step);
+
+    const problem =
+      !authoredPath.length ? 'Demonstrate a route first — click through the app on the left.'
+      : !binding.length    ? 'At least one step has to match, or every attempt would succeed.'
+      : !name              ? 'Give the task a name so you can find it later.'
+      : !goal              ? 'Write what the participant should read.'
+      : null;
+    if (problem) { errEl.innerHTML = `<div class="error-box">${problem}</div>`; return; }
+
+    const btn = document.getElementById('save-task-btn');
+    btn.disabled = true;
+    const { error } = await supabaseClient.from('tasks').insert({
+      task_id: crypto.randomUUID(), name, goal_text: goal,
+      path: authoredPath.map(({ step, value }) => ({ step, value })),
+      binding, is_active: tasks.length === 0   // first task authored goes live
+    });
+    btn.disabled = false;
+
+    if (error) { errEl.innerHTML = `<div class="error-box">Couldn't save: ${error.message}</div>`; return; }
+    closeAuthoring();
+    loadTasks();
+  });
+
+  async function loadTasks() {
+    const list = document.getElementById('task-list');
+    const { data, error } = await supabaseClient
+      .from('tasks').select('*').order('created_at', { ascending: false });
+
+    if (error) {
+      list.innerHTML = `<div class="error-box">Couldn't load tasks: ${error.message}</div>`;
+      return;
+    }
+    tasks = data || [];
+    if (!tasks.length) {
+      list.innerHTML = '<div class="empty-note">No tasks yet. Define one to give participants a goal.</div>';
+      return;
+    }
+
+    list.innerHTML = tasks.map(t => {
+      const route = (t.path || []).map(p =>
+        (t.binding || []).includes(p.step) ? `<b>${p.value}</b>` : p.value).join(' → ');
+      const kind = (t.binding || []).length === (t.path || []).length
+        ? 'exact path' : `goal · ${(t.binding || []).join(', ')} must match`;
+      return `<div class="task-row${t.is_active ? ' active' : ''}">
+        <span class="task-name">${t.name}</span>
+        <span class="task-detail">${route} <span style="color:#8A8578">— ${kind}</span></span>
+        ${t.is_active
+          ? '<span class="task-badge">Active</span>'
+          : `<button class="signout-btn" data-activate="${t.task_id}">Make active</button>`}
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('task-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-activate]');
+    if (!btn) return;
+    btn.disabled = true;
+    // A trigger stands the others down, so only this update is needed.
+    const { error } = await supabaseClient.from('tasks')
+      .update({ is_active: true }).eq('task_id', btn.dataset.activate);
+    if (error) console.error('activate task failed', error);
+    loadTasks();
+  });
+
   function showLogin() {
     document.getElementById('dashboard-page').hidden = true;
     document.getElementById('login-page').hidden = false;
@@ -1195,6 +1478,7 @@
     document.getElementById('login-page').hidden = true;
     document.getElementById('dashboard-page').hidden = false;
     loadDashboard();
+    loadTasks();
   }
 
   document.getElementById('login-form').addEventListener('submit', async (e) => {

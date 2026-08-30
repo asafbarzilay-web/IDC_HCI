@@ -272,6 +272,23 @@
   const previewStepParam = new URLSearchParams(location.search).get('previewStep');
   const PREVIEW_MODE = previewStepParam in PREVIEW_STEP_INDEX;
 
+  // Author mode: the real app, fully interactive, but recording nothing.
+  // The dashboard embeds it so a task can be defined by demonstration —
+  // click the route you want and each choice is reported to the parent.
+  // Demonstrating is the only way a task can name a step or option that
+  // actually exists; a hand-written task drifts the moment the flow changes.
+  const AUTHOR_MODE = new URLSearchParams(location.search).get('authorMode') === '1';
+
+  // Both modes are observation, not participation — neither may write.
+  const TRACKING_OFF = PREVIEW_MODE || AUTHOR_MODE;
+
+  function reportToAuthor(type, payload) {
+    if (!AUTHOR_MODE || window.parent === window) return;
+    // Same-origin only: the dashboard serves this frame, so there is no
+    // reason to broadcast the study's task design more widely.
+    window.parent.postMessage({ source: 'idc-hci-author', type, ...payload }, window.location.origin);
+  }
+
   const state = { step: 0, number: null, letter: null, shape: null };
   let sessionId = newId();
   let stepEnteredAt = Date.now();
@@ -338,7 +355,7 @@
   // exist first. startSession() keeps the in-flight insert as a promise
   // and every later write waits on it — no ordering races, no orphans.
   function startSession(isRestart) {
-    if (PREVIEW_MODE || !supabaseClient) return Promise.resolve();
+    if (TRACKING_OFF || !supabaseClient) return Promise.resolve();
     return supabaseClient.from('sessions')
       .insert({ session_id: sessionId, user_id: userId, platform, is_restart: isRestart })
       .then(({ error }) => { if (error) console.error('startSession failed', error); })
@@ -348,7 +365,7 @@
   // Capture the ids at call time: a restart swaps both sessionId and
   // sessionReady, and a write already in flight must keep its own pair.
   async function write(table, row) {
-    if (PREVIEW_MODE || !supabaseClient) return;
+    if (TRACKING_OFF || !supabaseClient) return;
     const sid = sessionId, ready = sessionReady;
     try {
       await ready;
@@ -363,9 +380,11 @@
     const duration_ms = Date.now() - stepEnteredAt;
     state[key] = value;
     state.step += 1;
-    // A run is complete when its third selection lands, and total time is
-    // the sum of the three durations — so no extra 'complete' row.
+    // A run is complete when every step has an answer. A participant may
+    // answer the same step more than once (Back, then change their mind);
+    // the latest answer wins and the revisit is what marks the run indirect.
     write('selections', { step: key, value, duration_ms });
+    reportToAuthor('choice', { step: key, value });
     render();
   }
 
@@ -384,6 +403,7 @@
     state.number = null;
     state.letter = null;
     state.shape = null;
+    reportToAuthor('reset', {});
     render();
   }
 
