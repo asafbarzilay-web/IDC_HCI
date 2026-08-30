@@ -679,6 +679,28 @@
     return Math.round(classified.filter(c => c.hit === 'none').length / classified.length * 100);
   }
 
+  // A participant can answer the same step more than once — pressing Back and
+  // changing their mind. These two helpers hold the whole reading rule, so it
+  // is stated once rather than re-derived at every call site:
+  //
+  //   the answer to a step  = its LATEST row
+  //   progress through flow = how many DISTINCT steps have an answer
+  //
+  // Counting raw rows instead would inflate progress every time someone
+  // revisited a step, and `.find()` would report the attempt they abandoned.
+  function finalAnswer(session, step) {
+    let latest = null;
+    for (const p of session.selections) {
+      if (p.step !== step) continue;
+      if (!latest || new Date(p.created_at) >= new Date(latest.created_at)) latest = p;
+    }
+    return latest;
+  }
+
+  function stepsAnswered(session) {
+    return new Set(session.selections.map(p => p.step)).size;
+  }
+
   // Per-stage funnel, timings, clicks and choices. Computed once per load and
   // read by whichever stage tab is showing.
   function computeStages(sessions) {
@@ -688,18 +710,22 @@
       // A session reached step i once it cleared every step before it, so
       // "reached" counts people who saw the screen — including those who then
       // left. That difference is the drop-off.
-      const reached = sessions.filter(s => s.selections.length >= i);
+      const reached = sessions.filter(s => stepsAnswered(s) >= i);
       const passed  = reached.filter(s => s.selections.some(p => p.step === step));
 
-      const durations = passed.map(s => s.selections.find(p => p.step === step).duration_ms);
+      // Time on a step sums every visit to it: a participant who backed out
+      // and returned genuinely spent all of that time here.
+      const durations = passed.map(s =>
+        s.selections.filter(p => p.step === step).reduce((n, p) => n + p.duration_ms, 0));
       // Only count clicks for people who got past the stage — an abandoned
       // attempt would otherwise make a hard stage look effortless.
       const clickCounts = passed.map(s => s.clicks.filter(c => c.step === step).length);
       const stepClicks = reached.flatMap(s => s.clicks.filter(c => c.step === step));
 
+      // Their answer is what they settled on, not what they first tried.
       const choices = {};
       passed.forEach(s => {
-        const v = s.selections.find(p => p.step === step).value;
+        const v = finalAnswer(s, step).value;
         choices[v] = (choices[v] || 0) + 1;
       });
 
@@ -717,7 +743,7 @@
     });
 
     // The terminal screen isn't a stage you pass — no duration, no choice.
-    const finished = sessions.filter(s => s.selections.length === STEPS.length);
+    const finished = sessions.filter(s => stepsAnswered(s) === STEPS.length);
     const successClicks = finished.flatMap(s => s.clicks.filter(c => c.step === 'success'));
     out.success = {
       reached: finished.length,
@@ -928,7 +954,7 @@
   function rebuildSessionOptions(sessions) {
     sessionFilter.setOptions(sessions.map(s => {
       const picks = STEPS
-        .map(k => s.selections.find(p => p.step === k)?.value)
+        .map(k => finalAnswer(s, k)?.value)
         .filter(Boolean).join(' · ');
       const when = new Date(s.started_at).toLocaleString(undefined,
         { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -1093,7 +1119,7 @@
     // "Started" means the visitor actually made a pick; a session with no
     // selections is someone who opened the page and left.
     const started = sessions.filter(s => s.selections.length > 0);
-    const completed = sessions.filter(s => s.selections.length === STEPS.length);
+    const completed = sessions.filter(s => stepsAnswered(s) === STEPS.length);
     const restarted = sessions.filter(s => s.is_restart);
     const rate = started.length > 0 ? Math.round((completed.length / started.length) * 100) : 0;
     const uniqueUsers = new Set(sessions.map(s => s.user_id)).size;
@@ -1109,6 +1135,8 @@
 
     // Start-to-finish totals, folded into the cards rather than sitting in a
     // table row — spread and median go in the sub-label so nothing is lost.
+    // Sums every selection, revisits included: time spent on a choice they
+    // later backed out of is still time they spent in the flow.
     const totalTime = stageStats(completed.map(s =>
       s.selections.reduce((n, p) => n + p.duration_ms, 0)));
     const totalClicks = stageStats(completed.map(s =>
