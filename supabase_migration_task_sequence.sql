@@ -18,7 +18,16 @@
 alter table public.tasks add column if not exists position integer;
 
 -- Carry over whatever was active so nothing silently drops out of the study.
-update public.tasks set position = 1 where is_active and position is null;
+-- Guarded: is_active is dropped below, so an unguarded UPDATE would fail on
+-- any re-run — every statement here has to survive being applied twice.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'tasks'
+               and column_name = 'is_active') then
+    execute 'update public.tasks set position = 1 where is_active and position is null';
+  end if;
+end $$;
 
 -- The single-active rule and its trigger no longer apply.
 drop trigger  if exists tasks_single_active on public.tasks;
