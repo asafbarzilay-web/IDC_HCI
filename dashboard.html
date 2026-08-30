@@ -331,6 +331,33 @@
     background: #FAF9F5; margin-bottom: 8px;
   }
   .task-row.active { border-color: #C15F3C; background: #F6E9E1; }
+
+  .task-seq {
+    font-family: Newsreader, Georgia, serif;
+    font-size: 17px;
+    color: #C15F3C;
+    width: 20px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .task-move { display: flex; gap: 4px; flex-shrink: 0; }
+  .task-move button {
+    text-decoration: none;
+    font-size: 15px;
+    line-height: 1;
+    padding: 4px 7px;
+    border: 1px solid #E0DBCE;
+    border-radius: 6px;
+    background: #fff;
+  }
+  .task-move button:disabled { opacity: 0.3; cursor: default; }
+
+  .task-subhead {
+    font-size: 11px; font-weight: 500; color: #8A8578;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    margin: 22px 0 10px;
+  }
   .task-name { font-weight: 600; font-size: 14px; }
   .task-detail { font-size: 13px; color: #6B665A; flex: 1; min-width: 200px; }
   .task-detail b { color: #29261F; font-weight: 600; }
@@ -1416,8 +1443,8 @@
   // asked to do something is a fact you want visible from the Results view.
   function renderTaskTabFlag() {
     const tab = document.querySelector('.main-tab[data-view="tasks"]');
-    const live = tasks.find(t => t.is_active);
-    tab.innerHTML = 'Tasks' + (live ? '<span class="tab-flag">1 active</span>' : '');
+    const n = tasks.filter(t => t.position != null).length;
+    tab.innerHTML = 'Tasks' + (n ? `<span class="tab-flag">${n} in sequence</span>` : '');
   }
 
   function renderAuthoredPath() {
@@ -1507,7 +1534,7 @@
     const { error } = await supabaseClient.from('tasks').insert({
       task_id: crypto.randomUUID(), name, goal_text: goal,
       path: authoredPath.map(({ step, value }) => ({ step, value })),
-      binding, is_active: false
+      binding, position: null            // authored as a draft; add it deliberately
     });
     btn.disabled = false;
 
@@ -1532,41 +1559,86 @@
       return;
     }
 
-    // No task active is a legitimate, and the default, state: participants
-    // just use the flow freely. Say so rather than leaving it implied.
-    const live = tasks.find(t => t.is_active);
-    const banner = live
-      ? `<div class="task-status">Participants are being asked: <b>${live.name}</b></div>`
-      : `<div class="task-status muted">No task is active — participants use the flow freely.</div>`;
+    // Participants work through the sequence in order. A task with no
+    // position exists but isn't being asked — a draft, or one retired from
+    // the study without deleting the results it already produced.
+    const inSeq  = tasks.filter(t => t.position != null)
+                        .sort((a, b) => a.position - b.position ||
+                              new Date(a.created_at) - new Date(b.created_at));
+    const outSeq = tasks.filter(t => t.position == null);
 
-    list.innerHTML = banner + tasks.map(t => {
+    const describe = t => {
       const route = (t.path || []).map(p =>
         (t.binding || []).includes(p.step) ? `<b>${p.value}</b>` : p.value).join(' → ');
       const kind = (t.binding || []).length === (t.path || []).length
         ? 'exact path' : `goal · ${(t.binding || []).join(', ')} must match`;
-      return `<div class="task-row${t.is_active ? ' active' : ''}">
+      return `${route} <span style="color:#8A8578">— ${kind}</span>`;
+    };
+
+    const banner = inSeq.length
+      ? `<div class="task-status">Participants work through <b>${inSeq.length} task${inSeq.length > 1 ? 's' : ''}</b>, in order.</div>`
+      : `<div class="task-status muted">No tasks in the sequence — participants use the flow freely.</div>`;
+
+    const seqRows = inSeq.map((t, i) => `
+      <div class="task-row active">
+        <span class="task-seq">${i + 1}</span>
         <span class="task-name">${t.name}</span>
-        <span class="task-detail">${route} <span style="color:#8A8578">— ${kind}</span></span>
-        ${t.is_active
-          ? `<span class="task-badge">Active</span>
-             <button class="signout-btn" data-deactivate="${t.task_id}">Stand down</button>`
-          : `<button class="signout-btn" data-activate="${t.task_id}">Make active</button>`}
-      </div>`;
-    }).join('');
+        <span class="task-detail">${describe(t)}</span>
+        <span class="task-move">
+          <button class="signout-btn" data-move="up"   data-id="${t.task_id}" ${i === 0 ? 'disabled' : ''} title="Move earlier">↑</button>
+          <button class="signout-btn" data-move="down" data-id="${t.task_id}" ${i === inSeq.length - 1 ? 'disabled' : ''} title="Move later">↓</button>
+        </span>
+        <button class="signout-btn" data-remove="${t.task_id}">Remove</button>
+      </div>`).join('');
+
+    const outRows = outSeq.length ? `
+      <h3 class="task-subhead">Not in the sequence</h3>` + outSeq.map(t => `
+      <div class="task-row">
+        <span class="task-name">${t.name}</span>
+        <span class="task-detail">${describe(t)}</span>
+        <button class="signout-btn" data-add="${t.task_id}">Add to sequence</button>
+      </div>`).join('') : '';
+
+    list.innerHTML = banner + seqRows + outRows;
+  }
+
+  // Every change rewrites the whole order. Nudging one row at a time would
+  // leave gaps and duplicate positions to reason about; restating the
+  // sequence is cheap at this size and always self-consistent.
+  async function writeSequence(orderedIds) {
+    const updates = orderedIds.map((id, i) =>
+      supabaseClient.from('tasks').update({ position: i + 1 }).eq('task_id', id));
+    const results = await Promise.all(updates);
+    const failed = results.find(r => r.error);
+    if (failed) console.error('reorder failed', failed.error);
   }
 
   document.getElementById('task-list').addEventListener('click', async (e) => {
-    const on  = e.target.closest('[data-activate]');
-    const off = e.target.closest('[data-deactivate]');
-    if (!on && !off) return;
-    const btn = on || off;
+    const btn = e.target.closest('[data-add], [data-remove], [data-move]');
+    if (!btn) return;
     btn.disabled = true;
-    // Activating relies on the trigger to stand the others down; standing one
-    // down needs its own path, or there would be no way back to "no task".
-    const { error } = await supabaseClient.from('tasks')
-      .update({ is_active: !!on })
-      .eq('task_id', btn.dataset.activate || btn.dataset.deactivate);
-    if (error) console.error('task activation failed', error);
+
+    const ordered = tasks.filter(t => t.position != null)
+      .sort((a, b) => a.position - b.position ||
+            new Date(a.created_at) - new Date(b.created_at))
+      .map(t => t.task_id);
+
+    if (btn.dataset.add) {
+      await writeSequence([...ordered, btn.dataset.add]);
+    } else if (btn.dataset.remove) {
+      const { error } = await supabaseClient.from('tasks')
+        .update({ position: null }).eq('task_id', btn.dataset.remove);
+      if (error) console.error('remove from sequence failed', error);
+      // Close the gap the removal leaves behind.
+      await writeSequence(ordered.filter(id => id !== btn.dataset.remove));
+    } else {
+      const i = ordered.indexOf(btn.dataset.id);
+      const j = btn.dataset.move === 'up' ? i - 1 : i + 1;
+      if (j >= 0 && j < ordered.length) {
+        [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+        await writeSequence(ordered);
+      }
+    }
     loadTasks();
   });
 
