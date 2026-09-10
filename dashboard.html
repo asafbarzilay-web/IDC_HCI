@@ -1313,7 +1313,11 @@
       .select('session_id, user_id, platform, is_restart, started_at,'
             + ' selections(step, value, duration_ms, created_at),'
             + ' clicks(step, x, y, seq, hit)')
-      .order('started_at', { ascending: true })
+      // Newest first, then re-sorted ascending below. Ordering ascending
+      // here would make the limit keep the OLDEST 5000 sessions and drop
+      // every recent run — the dashboard would look like data stopped
+      // arriving, which is the one failure you'd never think to check.
+      .order('started_at', { ascending: false })
       .limit(5000);
 
     if (fromVal) query = query.gte('started_at', `${fromVal}T00:00:00.000Z`);
@@ -1330,7 +1334,10 @@
       return;
     }
 
-    allSessions = data.map(s => ({ ...s, selections: s.selections || [], clicks: s.clicks || [] }));
+    // Back to chronological, which is the order everything downstream
+    // (the session picker, the funnel) assumes.
+    allSessions = data.slice().reverse()
+      .map(s => ({ ...s, selections: s.selections || [], clicks: s.clicks || [] }));
     rebuildSessionOptions(allSessions);
     applyFilters();
   }
@@ -1393,8 +1400,39 @@
     // "we only collected this much".
     const narrowed = sessions.length !== allSessions.length
       ? ` (filtered from ${allSessions.length})` : '';
+
+    // Say out loud that the view is windowed. A default date range that
+    // isn't stated turns "we collected less than I thought" into a
+    // conclusion someone draws from an artefact of the query.
+    const from = document.getElementById('filter-from').value;
+    const to = document.getElementById('filter-to').value;
+    const windowLabel = from || to
+      ? ` · ${from || 'start'} to ${to || 'today'}` : ' · all time';
+
     document.getElementById('updated-label').textContent =
-      `Updated ${new Date().toLocaleTimeString()} · ${sessions.length} sessions${narrowed} · ${allClicks.length} clicks`;
+      `Updated ${new Date().toLocaleTimeString()} · ${sessions.length} sessions${narrowed} · ${allClicks.length} clicks${windowLabel}`;
+  }
+
+  // The default view is bounded rather than all-time. Left open, every
+  // load pulled the entire history with every click row attached, and it
+  // re-ran on each filter change — which is how a project quietly spends
+  // its whole disk IO budget on a dashboard nobody is watching.
+  // Widening it is one date field away; the cost is opt-in now.
+  const DEFAULT_WINDOW_DAYS = 30;
+
+  function defaultFromDate() {
+    const d = new Date();
+    d.setDate(d.getDate() - DEFAULT_WINDOW_DAYS);
+    // toISOString is UTC; an <input type="date"> wants the local calendar
+    // day, so a UTC conversion would shift the boundary by a day either
+    // side of midnight depending on the timezone.
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function applyDefaultRange() {
+    document.getElementById('filter-from').value = defaultFromDate();
+    document.getElementById('filter-to').value = '';
   }
 
   document.getElementById('refresh-btn').addEventListener('click', loadDashboard);
@@ -1402,8 +1440,10 @@
   document.getElementById('filter-to').addEventListener('change', loadDashboard);
   document.getElementById('filter-platform').addEventListener('change', loadDashboard);
   document.getElementById('clear-filters-btn').addEventListener('click', () => {
-    document.getElementById('filter-from').value = '';
-    document.getElementById('filter-to').value = '';
+    // Back to the default window, not to all-time: "clear" should restore
+    // the view you started on, and making the expensive query the one
+    // reachable by a button labelled Clear is a trap.
+    applyDefaultRange();
     document.getElementById('filter-platform').value = 'all';
     // Sessions is one of the filters now, so clearing has to reset it too.
     sessionFilter.selectAll();
@@ -1650,6 +1690,7 @@
   function showDashboard() {
     document.getElementById('login-page').hidden = true;
     document.getElementById('dashboard-page').hidden = false;
+    applyDefaultRange();
     loadDashboard();
     loadTasks();
   }
