@@ -540,6 +540,53 @@
     text-align: center;
   }
 
+
+  /* ---------------------------------------------------------------
+     Gaze panel. Reuses the click heatmap's frame/canvas mechanics —
+     same coordinate convention, same preview — but in a distinct hue,
+     because the two must never be mistaken for one another when both
+     are on screen: clicks are ground truth, gaze is an estimate.
+     --------------------------------------------------------------- */
+  .gaze-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .gaze-head h3 { margin: 0; }
+
+  .gaze-controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .gaze-controls label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8A8578;
+    margin-bottom: 5px;
+  }
+  .gaze-controls select {
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid #E0DBCE;
+    background: #FAF9F5;
+    color: #29261F;
+    max-width: 230px;
+  }
+
+  /* A caveat, not a footnote: gaze estimates are region-accurate at best,
+     and a reader who takes them for pixel truth will draw wrong
+     conclusions. It sits with the picture rather than in a doc. */
+  .gaze-caveat {
+    margin: 12px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #8A8578;
+  }
+
   .error-box {
     background: #F6E9E1;
     border: 1px solid #C15F3C;
@@ -798,6 +845,57 @@
           <canvas class="heatmap-canvas" id="heatmap-canvas"></canvas>
           <div class="empty-note" id="heatmap-empty" hidden>No clicks recorded yet for this step.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Gaze is deliberately its own panel rather than another tab inside
+         "By stage": it covers a different subset of participants (only
+         those who consented and calibrated), so folding it in beside the
+         click numbers would silently mix two cohorts. -->
+    <div class="panel">
+      <h2>Where they looked</h2>
+
+      <div class="stat-row" id="gaze-stats"></div>
+
+      <div class="stage-heat">
+        <div class="gaze-head">
+          <h3>Gaze heatmap</h3>
+          <div class="gaze-controls">
+            <div>
+              <label for="gaze-step">Screen</label>
+              <select id="gaze-step">
+                <option value="number">Number</option>
+                <option value="letter">Letter</option>
+                <option value="shape">Shape</option>
+                <option value="success">Success</option>
+              </select>
+            </div>
+            <div>
+              <label for="gaze-mode">View</label>
+              <select id="gaze-mode">
+                <option value="heat">Heatmap — everyone</option>
+                <option value="path">Scanpath — one participant</option>
+              </select>
+            </div>
+            <div id="gaze-session-field" hidden>
+              <label for="gaze-session">Participant</label>
+              <select id="gaze-session"></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="heatmap-wrap">
+          <iframe class="heatmap-frame" id="gaze-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
+          <canvas class="heatmap-canvas" id="gaze-canvas"></canvas>
+          <div class="empty-note" id="gaze-empty" hidden>No gaze recorded yet for this screen.</div>
+        </div>
+
+        <p class="gaze-caveat">
+          Webcam gaze is accurate to a region, not a button — expect it to be
+          off by roughly a finger's width at arm's length, and further for
+          anyone who moved or wore glasses. Read it for what people scanned
+          and in what order, not for which single option they fixated on.
+        </p>
       </div>
     </div>
     </div><!-- /view-analytics -->
@@ -1211,8 +1309,8 @@
   // own column — that keeps a click on a button's left edge on that same
   // edge regardless of how big the visitor's window was. Falls back to
   // treating the whole canvas as the column if the preview isn't ready.
-  function previewColumnRect(canvas) {
-    const frame = document.getElementById('heatmap-frame');
+  function previewColumnRect(canvas, frameId = 'heatmap-frame') {
+    const frame = document.getElementById(frameId);
     try {
       const fwin = frame.contentWindow;
       const wrap = fwin.document.querySelector('.wrap');
@@ -1295,6 +1393,199 @@
     renderStage();
   });
 
+  // =====================================================================
+  // Gaze
+  //
+  // Only sessions whose gaze_state is 'tracking' contributed samples. That
+  // is a different, self-selected cohort from the one every other number on
+  // this page describes, so it is counted and stated rather than assumed.
+  // =====================================================================
+
+  let currentGazeStep = 'number';
+  let currentGazeMode = 'heat';
+
+  function gazeCohort(sessions) {
+    return {
+      tracking: sessions.filter(s => s.gaze_state === 'tracking'),
+      declined: sessions.filter(s => s.gaze_state === 'declined'),
+      // Consented, opened the camera, then abandoned setup. Worth its own
+      // number: a high count means calibration is too long, not that
+      // people object to being tracked.
+      gaveUp: sessions.filter(s => s.gaze_state === 'calibrating'),
+      offered: sessions.filter(s => s.gaze_state && s.gaze_state !== 'unsupported')
+    };
+  }
+
+  function renderGazeStats(sessions) {
+    const c = gazeCohort(sessions);
+    // A row is a fixation, so time looking is the sum of their durations —
+    // counting rows would say a dozen glances beat one long stare.
+    const fixations = sessions.reduce((n, s) => n + s.gaze.length, 0);
+    const dwellMs = sessions.reduce((n, s) =>
+      n + s.gaze.reduce((m, g) => m + g.dur_ms, 0), 0);
+    const optIn = c.offered.length
+      ? Math.round((c.tracking.length / c.offered.length) * 100) : null;
+    const avgMs = c.tracking.length ? dwellMs / c.tracking.length : 0;
+
+    const card = (label, value, sub) => `
+      <div class="stat-card">
+        <div class="stat-label">${label}</div>
+        <div class="stat-value">${value}</div>
+        <div class="stat-sub">${sub || ''}</div>
+      </div>`;
+
+    document.getElementById('gaze-stats').innerHTML =
+      card('Eye tracked', c.tracking.length,
+           optIn == null ? 'nobody was asked yet' : `${optIn}% of those asked`) +
+      card('Declined', c.declined.length, 'said no to the camera') +
+      card('Gave up in setup', c.gaveUp.length, 'consented, skipped calibration') +
+      card('Fixations', fixations.toLocaleString(),
+           fixations ? `${fmtDuration(dwellMs)} of looking` : '') +
+      card('Looking per person', c.tracking.length ? fmtDuration(avgMs) : '—',
+           c.tracking.length ? 'across the whole run' : '');
+  }
+
+  // Which participants can actually be drawn as a path on this screen.
+  // Rebuilt per screen so the dropdown never offers an empty scanpath.
+  function rebuildGazeSessions(sessions) {
+    const select = document.getElementById('gaze-session');
+    const previous = select.value;
+    const withGaze = sessions.filter(s => s.gaze.some(g => g.step === currentGazeStep));
+
+    select.innerHTML = withGaze.length
+      ? withGaze.map((s, i) => {
+          const n = s.gaze.filter(g => g.step === currentGazeStep).length;
+          return `<option value="${s.session_id}">#${i + 1} · ${s.session_id.slice(0, 8)} · ${n} fixations</option>`;
+        }).join('')
+      : '<option value="">No gaze on this screen</option>';
+
+    // Keep the same participant selected across a screen switch where we
+    // can, so stepping through the flow follows one person rather than
+    // silently jumping to whoever happens to be first.
+    if (previous && withGaze.some(s => s.session_id === previous)) select.value = previous;
+  }
+
+  function sizeCanvas(canvas) {
+    const box = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const wantW = Math.max(1, Math.round(box.width * dpr));
+    const wantH = Math.max(1, Math.round(box.height * dpr));
+    if (canvas.width !== wantW || canvas.height !== wantH) {
+      canvas.width = wantW;
+      canvas.height = wantH;
+    }
+    return dpr;
+  }
+
+  function renderGaze() {
+    const canvas = document.getElementById('gaze-canvas');
+    const dpr = sizeCanvas(canvas);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const col = previewColumnRect(canvas, 'gaze-frame')
+      || { left: 0, top: 0, width: canvas.width, height: canvas.height };
+    const project = p => [col.left + p.x * col.width, col.top + p.y * col.height];
+
+    let points;
+    if (currentGazeMode === 'path') {
+      const id = document.getElementById('gaze-session').value;
+      const session = lastData.find(s => s.session_id === id);
+      points = session ? session.gaze.filter(g => g.step === currentGazeStep) : [];
+    } else {
+      points = lastData.flatMap(s => s.gaze).filter(g => g.step === currentGazeStep);
+    }
+
+    document.getElementById('gaze-empty').hidden = points.length > 0;
+    if (!points.length) return;
+
+    if (currentGazeMode === 'heat') {
+      // Wider and softer than the click heatmap on purpose: drawing an
+      // estimate with a tight radius claims a precision it does not have.
+      // Weighted by how long each look lasted, not by how many rows there
+      // are: a glance should not read as hot as a stare.
+      //
+      // Scaled against the durations actually on screen rather than a
+      // fixed ceiling. Real webcam fixations run a couple of hundred
+      // milliseconds, so dividing by a guessed 800ms made every blob
+      // ~7% opaque and the whole layer looked empty. The 90th percentile
+      // keeps one long outlier from flattening everything else, and the
+      // floor keeps the briefest looks visible rather than invisible.
+      const durs = points.map(p => p.dur_ms).sort((a, b) => a - b);
+      const ref = Math.max(200, durs[Math.floor(durs.length * 0.9)] || 400);
+
+      ctx.globalCompositeOperation = 'lighter';
+      points.forEach(p => {
+        const [x, y] = project(p);
+        const r = 46 * dpr;
+        const weight = Math.max(0.3, Math.min(1, p.dur_ms / ref));
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, `rgba(58,110,124,${(0.38 * weight).toFixed(3)})`);
+        g.addColorStop(0.5, `rgba(58,110,124,${(0.16 * weight).toFixed(3)})`);
+        g.addColorStop(1, 'rgba(58,110,124,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalCompositeOperation = 'source-over';
+      return;
+    }
+
+    // Already fixations, already in order — sorted once when the data
+    // arrived, so the path is drawn in the order the looks happened.
+    const fixations = points;
+
+    ctx.strokeStyle = 'rgba(58,110,124,0.45)';
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    fixations.forEach((f, i) => {
+      const [x, y] = project(f);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    fixations.forEach((f, i) => {
+      const [x, y] = project(f);
+      // Area, not radius, tracks dwell — a circle twice as wide reads as
+      // four times the time, which is what a linear radius would imply.
+      const r = Math.sqrt(f.dur_ms / 100) * 7 * dpr;
+      ctx.fillStyle = 'rgba(58,110,124,0.30)';
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(58,110,124,0.85)';
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.stroke();
+
+      ctx.fillStyle = '#1F3E47';
+      ctx.font = `${11 * dpr}px ui-sans-serif, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), x, y);
+    });
+  }
+
+  document.getElementById('gaze-frame').addEventListener('load', renderGaze);
+  window.addEventListener('resize', renderGaze);
+
+  document.getElementById('gaze-step').addEventListener('change', (e) => {
+    currentGazeStep = e.target.value;
+    document.getElementById('gaze-frame').src = `index.html?previewStep=${currentGazeStep}`;
+    rebuildGazeSessions(lastData);
+    renderGaze();
+  });
+
+  document.getElementById('gaze-mode').addEventListener('change', (e) => {
+    currentGazeMode = e.target.value;
+    document.getElementById('gaze-session-field').hidden = currentGazeMode !== 'path';
+    document.querySelector('.gaze-head h3').textContent =
+      currentGazeMode === 'path' ? 'Scanpath' : 'Gaze heatmap';
+    renderGaze();
+  });
+
+  document.getElementById('gaze-session').addEventListener('change', renderGaze);
+
   async function loadDashboard() {
     const refreshBtn = document.getElementById('refresh-btn');
     const errorSlot = document.getElementById('error-slot');
@@ -1310,9 +1601,10 @@
     // already scoped — no client-side stitching, no second round trip.
     let query = supabaseClient
       .from('sessions')
-      .select('session_id, user_id, platform, is_restart, started_at,'
+      .select('session_id, user_id, platform, is_restart, started_at, gaze_state,'
             + ' selections(step, value, duration_ms, created_at),'
-            + ' clicks(step, x, y, seq, hit)')
+            + ' clicks(step, x, y, seq, hit),'
+            + ' gaze(step, x, y, t_ms, dur_ms)')
       // Newest first, then re-sorted ascending below. Ordering ascending
       // here would make the limit keep the OLDEST 5000 sessions and drop
       // every recent run — the dashboard would look like data stopped
@@ -1336,8 +1628,15 @@
 
     // Back to chronological, which is the order everything downstream
     // (the session picker, the funnel) assumes.
-    allSessions = data.slice().reverse()
-      .map(s => ({ ...s, selections: s.selections || [], clicks: s.clicks || [] }));
+    allSessions = data.slice().reverse().map(s => ({
+      ...s,
+      selections: s.selections || [],
+      clicks: s.clicks || [],
+      // Ordered here, once, rather than at draw time: the scanpath is only
+      // a path if the fixations are in the order they happened, and
+      // PostgREST makes no promise about the order of an embedded list.
+      gaze: (s.gaze || []).slice().sort((a, b) => a.t_ms - b.t_ms)
+    }));
     rebuildSessionOptions(allSessions);
     applyFilters();
   }
@@ -1396,6 +1695,10 @@
     renderTabLabels();
     renderStage();   // rebuilds the ordinal options for the current stage
 
+    renderGazeStats(sessions);
+    rebuildGazeSessions(sessions);
+    renderGaze();
+
     // Say when the view is narrowed, so a small number never looks like
     // "we only collected this much".
     const narrowed = sessions.length !== allSessions.length
@@ -1414,9 +1717,9 @@
   }
 
   // The default view is bounded rather than all-time. Left open, every
-  // load pulled the entire history with every click row attached, and it
-  // re-ran on each filter change — which is how a project quietly spends
-  // its whole disk IO budget on a dashboard nobody is watching.
+  // load pulled the entire history with every click and gaze row attached,
+  // and it re-ran on each filter change — which is how a project quietly
+  // spends its whole disk IO budget on a dashboard nobody is watching.
   // Widening it is one date field away; the cost is opt-in now.
   const DEFAULT_WINDOW_DAYS = 30;
 
