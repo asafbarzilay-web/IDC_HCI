@@ -233,6 +233,28 @@
   .back-btn:hover { color: #29261F; }
 
 
+
+  /* Always reachable in free_then_tasks: the participant decides when they
+     are ready, so the way in cannot be somewhere they have to find. */
+  .start-tasks {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 45;
+    font: inherit;
+    font-size: 14px;
+    background: #C15F3C;
+    color: #FAF9F5;
+    border: none;
+    border-radius: 999px;
+    padding: 11px 22px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(41,38,31,0.12);
+    transition: background 0.2s ease;
+  }
+  .start-tasks[hidden] { display: none; }
+  .start-tasks:hover { background: #A94E2E; }
+
   /* ---- Task battery ---------------------------------------------- */
   .task-banner {
     background: #F6E9E1;
@@ -625,6 +647,8 @@
 <!-- Framing is confirmed here, while the preview is up and nothing else is
      on screen. It cannot stay visible into calibration: WebGazer parks the
      preview over the top-left corner, directly on top of the dot there. -->
+<button class="start-tasks" id="start-tasks" hidden>Start the tasks &rarr;</button>
+
 <button class="gaze-stop" id="gaze-stop" hidden>
   <span class="rec"></span> Eye tracking on — stop
 </button>
@@ -772,7 +796,7 @@
     if (TRACKING_OFF || !supabaseClient) return Promise.resolve();
     return supabaseClient.from('sessions')
       .insert({ session_id: sessionId, user_id: userId, platform, is_restart: isRestart,
-                gaze_state: gazeState })
+                gaze_state: gazeState, study_mode: studyMode })
       .then(({ error }) => { if (error) console.error('startSession failed', error); })
       .catch(err => console.error('startSession failed', err));
   }
@@ -805,10 +829,13 @@
     // A run is complete when every step has an answer. A participant may
     // answer the same step more than once (Back, then change their mind);
     // the latest answer wins and the revisit is what marks the run indirect.
-    write('selections', { step: key, value, duration_ms });
+    // Stamped like clicks and gaze: in free_then_tasks one session holds
+    // both free play and task work, and the picks have to say which.
+    const t = currentTask();
+    write('selections', { step: key, value, duration_ms,
+                          task_id: t ? t.task_id : null });
     reportToAuthor('choice', { step: key, value });
 
-    const t = currentTask();
     if (t && t.kind === 'app_route' && state.step >= STEPS.length) {
       // Scored on the bound steps only. Wandering through free steps is
       // not failure — it shows up as extra time and clicks instead.
@@ -934,7 +961,11 @@
               : 'none';
 
     clickSeq[step] += 1;
-    write('clicks', { step, x, y, seq: clickSeq[step], hit });
+    // Stamped with the task in progress so two route tasks that both use
+    // the "shape" screen do not share one heatmap. Null in free play.
+    const task = currentTask();
+    write('clicks', { step, x, y, seq: clickSeq[step], hit,
+                      task_id: task ? task.task_id : null });
   }, true);
 
   function render() {
@@ -1177,7 +1208,8 @@
     if (dur_ms < FIXATION_MIN_MS) { gazeDropped += 1; return; }
     if (gazeBuffer.length >= GAZE_MAX_BUFFER) return;
 
-    gazeBuffer.push({ step: f.step, x: f.x, y: f.y, t_ms: f.t_ms, dur_ms });
+    gazeBuffer.push({ step: f.step, x: f.x, y: f.y, t_ms: f.t_ms, dur_ms,
+                      task_id: f.task_id });
   }
 
   var onGazeSample = function onGazeSample_(data) {
@@ -1220,10 +1252,12 @@
     }
 
     closeFixation();
+    const task = currentTask();
     fixation = {
       // Pinned now, not at close: a fixation that spans a step change
-      // belongs to the screen it started on.
+      // belongs to the screen it started on — and to the task it started in.
       step: currentStepLabel(),
+      task_id: task ? task.task_id : null,
       t_ms: Math.max(0, now - stepEnteredAt),
       x: sx, y: sy, n: 1, startAt: now, lastAt: now
     };
@@ -1507,6 +1541,7 @@
   // =====================================================================
 
   let battery = [];
+  let studyMode = 'tasks';
   let taskIndex = -1;
   let taskStartedAt = 0;
   let routeAttempt = [];      // every pick made during the current route task
@@ -1525,6 +1560,19 @@
     const t = currentTask();
     return !t || t.kind === 'app_route';
   };
+
+  // Read before the session row is written, so the session can record the
+  // mode it actually ran under. Falls back to 'tasks', which is how the
+  // app behaved before modes existed.
+  async function loadStudyMode() {
+    if (TRACKING_OFF || !supabaseClient) return 'tasks';
+    try {
+      const { data, error } = await supabaseClient
+        .from('study_settings').select('mode').eq('id', 1).maybeSingle();
+      if (error || !data) return 'tasks';
+      return data.mode || 'tasks';
+    } catch { return 'tasks'; }
+  }
 
   async function loadBattery() {
     if (TRACKING_OFF || !supabaseClient) return [];
@@ -1782,6 +1830,16 @@
     });
   }
 
+  document.getElementById('start-tasks').addEventListener('click', () => {
+    document.getElementById('start-tasks').hidden = true;
+    // A clean run at the first task: free play leaves the selector part
+    // way through, and the task should not inherit that position.
+    state.step = 0; state.number = null; state.letter = null; state.shape = null;
+    clickSeq = newClickCounts();
+    taskIndex = -1;
+    nextTask();
+  });
+
   document.getElementById('gaze-stop').addEventListener('click', () => {
     // Confirmed rather than immediate: it is one click away from the
     // study itself, and an accidental stop cannot be undone mid-run.
@@ -1808,6 +1866,7 @@
     // The decision is resolved before the session row is written, so
     // gaze_state can be an insert rather than a later update — visitors
     // are allowed to append rows and nothing more.
+    studyMode = await loadStudyMode();
     gazeState = await setUpGaze();
 
     // Calibration and the consent card both take real time, none of which
@@ -1821,10 +1880,16 @@
 
     // Only now: the battery needs a session to attach its answers to, and
     // loading it earlier would race the insert it depends on.
-    battery = await loadBattery();
-    if (battery.length) {
+    battery = studyMode === 'free' ? [] : await loadBattery();
+
+    if (studyMode === 'tasks' && battery.length) {
       taskIndex = -1;
       nextTask();
+    } else if (studyMode === 'free_then_tasks' && battery.length) {
+      // They explore first and start when they say so. The control stays
+      // on screen the whole time rather than appearing at some threshold
+      // we decided for them.
+      document.getElementById('start-tasks').hidden = false;
     }
 
     if (gazeOn) {
