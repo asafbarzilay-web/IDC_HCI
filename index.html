@@ -232,6 +232,127 @@
 
   .back-btn:hover { color: #29261F; }
 
+
+  /* ---- Task battery ---------------------------------------------- */
+  .task-banner {
+    background: #F6E9E1;
+    border: 1px solid #E4CDBE;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 28px;
+    animation: flowIn 0.4s ease both;
+  }
+  .task-banner .eyebrow { margin-bottom: 4px; }
+  .task-banner p { margin: 0; font-size: 15px; line-height: 1.5; color: #29261F; }
+
+
+  .task-banner-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+  /* Always on screen during a route task. A task that only ends on success
+     needs a way out, or someone who cannot find it is simply stuck. */
+  .task-giveup {
+    font: inherit;
+    font-size: 12px;
+    color: #8A7C6A;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    white-space: nowrap;
+  }
+  .task-giveup:hover { color: #A94E2E; }
+
+  .task-retry {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #E4CDBE;
+    font-size: 14px;
+    color: #A94E2E;
+  }
+
+  .q-block { animation: flowIn 0.4s ease both; }
+  .q-block h1 {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 30px;
+    font-weight: 500;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+  .q-block .q-desc { margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #5C574C; }
+
+  .q-options { display: flex; flex-direction: column; gap: 10px; }
+  .q-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    font: inherit;
+    font-size: 16px;
+    background: #FAF9F5;
+    border: 1px solid #E0DBCE;
+    border-radius: 12px;
+    padding: 15px 18px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    color: #29261F;
+  }
+  .q-option:hover { border-color: #C9A491; }
+  .q-option.on { border-color: #C15F3C; background: #F6E9E1; }
+  .q-option .mark {
+    width: 19px; height: 19px; flex: none;
+    border: 1.5px solid #C9A491;
+    background: #FFFFFF;
+  }
+  .q-option .mark.radio { border-radius: 50%; }
+  .q-option .mark.box   { border-radius: 5px; }
+  .q-option.on .mark { border-color: #C15F3C; background: #C15F3C; box-shadow: inset 0 0 0 3px #FAF9F5; }
+  .q-option input.other-text {
+    flex: 1; font: inherit; font-size: 15px;
+    border: none; border-bottom: 1px solid #D8D3C6;
+    background: transparent; padding: 2px 0; color: #29261F;
+  }
+  .q-option input.other-text:focus { outline: none; border-bottom-color: #C15F3C; }
+
+  .q-scale-wrap { display: inline-block; max-width: 100%; }
+  .q-scale { display: flex; gap: 8px; flex-wrap: wrap; }
+  .q-scale button {
+    font: inherit; font-size: 17px;
+    min-width: 52px; height: 52px;
+    border: 1px solid #E0DBCE;
+    background: #FAF9F5;
+    border-radius: 10px;
+    cursor: pointer;
+    color: #29261F;
+    transition: all 0.15s ease;
+  }
+  .q-scale button:hover { border-color: #C9A491; }
+  .q-scale button.on { border-color: #C15F3C; background: #C15F3C; color: #FAF9F5; }
+  .q-scale.faces button, .q-scale.stars button { font-size: 24px; }
+  .q-scale.stars button.on { background: #FAF9F5; color: #C15F3C; border-color: #C15F3C; }
+
+  .q-scale-labels {
+    display: flex; justify-content: space-between;
+    margin-top: 10px; font-size: 12px; color: #8A8578; gap: 12px;
+  }
+  .q-scale-labels span:nth-child(2) { text-align: center; }
+  .q-scale-labels span:last-child { text-align: right; }
+
+  .q-actions { margin-top: 30px; display: flex; align-items: center; gap: 14px; }
+  .q-continue {
+    font: inherit; font-size: 15px;
+    background: #C15F3C; color: #FAF9F5;
+    border: none; border-radius: 10px;
+    padding: 12px 26px; cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  .q-continue:hover:not(:disabled) { background: #A94E2E; }
+  .q-continue:disabled { opacity: 0.4; cursor: default; }
+  .q-skip {
+    font: inherit; font-size: 14px; color: #8A8578;
+    background: none; border: none; cursor: pointer; text-decoration: underline;
+  }
+  .q-skip:hover { color: #29261F; }
+
   /* ---------------------------------------------------------------
      Gaze consent + calibration. Both are full-screen overlays because
      both must be answered before the study can start: a participant who
@@ -674,12 +795,70 @@
     const duration_ms = Date.now() - stepEnteredAt;
     state[key] = value;
     state.step += 1;
+
+    // Append-only, and deliberately not deduplicated. Overwriting a step's
+    // earlier value in place erases the fact that it was answered twice —
+    // which is the whole difference between reaching the goal directly and
+    // reaching it after changing your mind. Same reading rule as
+    // `selections`: a step's answer is its latest entry.
+    routeAttempt.push({ step: key, value });
     // A run is complete when every step has an answer. A participant may
     // answer the same step more than once (Back, then change their mind);
     // the latest answer wins and the revisit is what marks the run indirect.
     write('selections', { step: key, value, duration_ms });
     reportToAuthor('choice', { step: key, value });
+
+    const t = currentTask();
+    if (t && t.kind === 'app_route' && state.step >= STEPS.length) {
+      // Scored on the bound steps only. Wandering through free steps is
+      // not failure — it shows up as extra time and clicks instead.
+      const bound = t.binding || [];
+      const wanted = Object.fromEntries((t.path || []).map(p => [p.step, p.value]));
+      // An empty binding would make every attempt wrong and trap the
+      // participant in a task they cannot finish, so it counts as reached.
+      const matched = bound.length === 0 || bound.every(step => state[step] === wanted[step]);
+
+      if (matched) { finishRouteTask('reached'); return; }
+
+      // Not the goal. Advancing to the next task is the only confirmation
+      // they get, so not advancing is the signal — but they are left
+      // exactly where they are rather than sent back to the start. No real
+      // app restarts you, and Back is the recovery path worth observing:
+      // wiping their answers would replace it with a mechanism that only
+      // exists in the test.
+      routeAttempts += 1;
+      routeRetry = true;
+      state.step = STEPS.length - 1;   // back on the last step, answers intact
+      render();
+      return;
+    }
+
     render();
+  }
+
+  // The single exit from a route task: either they reached the goal or they
+  // stopped trying. Both are results; only one of them is success.
+  function finishRouteTask(how) {
+    const t = currentTask();
+    if (!t) return;
+
+    // Changing an answer within an attempt, or needing more than one
+    // attempt, both mean they got there but not straight away.
+    const revisited = STEPS.some(st =>
+      routeAttempt.filter(p => p.step === st.key).length > 1);
+    const firstTime = routeAttempts === 1 && !revisited;
+
+    recordResponse({
+      // Every pick across every attempt, in order.
+      trail: routeAttempt.slice(),
+      final: STEPS.map(st => ({ step: st.key, value: state[st.key] })),
+      attempts: routeAttempts,
+      revisited,
+      matched: how === 'reached',
+      completed: how === 'reached',
+      outcome: how === 'gave_up' ? 'gave_up' : (firstTime ? 'direct' : 'indirect')
+    });
+    nextTask();
   }
 
   function back() {
@@ -713,6 +892,11 @@
     // guard 27 calibration clicks would land in the first step's heatmap
     // and every one of them would score as a mis-click.
     if (overlayActive) return;
+
+    // Question screens are not the app. Their clicks were being written as
+    // clicks on the 'number' step, every one of them scoring as a mis-click
+    // because a question option is not an .option-card.
+    if (!onAppScreen()) return;
 
     // Capture phase: runs before any button's own click handler mutates
     // state, so the logged step always reflects where the click landed.
@@ -760,11 +944,20 @@
     closeFixation();
 
     stepEnteredAt = Date.now();
-    document.querySelectorAll('.progress-dot').forEach(dot => {
-      const i = Number(dot.dataset.dot);
-      dot.classList.toggle('active', i <= state.step);
-    });
-    document.getElementById('progress-label').textContent = state.step < 3 ? `Step ${state.step + 1} of 3` : 'Complete';
+    if (!inBattery()) {
+      document.querySelectorAll('.progress-dot').forEach(dot => {
+        const i = Number(dot.dataset.dot);
+        dot.classList.toggle('active', i <= state.step);
+      });
+    }
+    // In a battery the rail belongs to the battery and is already drawn;
+    // free play keeps the original per-step rail.
+    if (inBattery()) {
+      renderBatteryProgress();
+    } else {
+      document.getElementById('progress-label').textContent =
+        state.step < 3 ? `Step ${state.step + 1} of 3` : 'Complete';
+    }
 
     const content = document.getElementById('step-content');
     const backBtn = document.getElementById('back-btn');
@@ -787,7 +980,21 @@
           </button>`;
       }).join('');
 
+      const task = currentTask();
+      const retryNote = routeRetry ? `
+          <div class="task-retry">Not the one we asked for. Change your answer, or go back a step.</div>` : '';
+      const banner = task && task.kind === 'app_route' ? `
+        <div class="task-banner">
+          <div class="task-banner-head">
+            <div class="eyebrow">Your task</div>
+            <button class="task-giveup" id="giveup-btn">I can't do this — move on</button>
+          </div>
+          <p>${escapeHtml(task.goal_text)}</p>
+          ${retryNote}
+        </div>` : '';
+
       content.innerHTML = `
+        ${banner}
         <div class="step">
           <div class="eyebrow">${s.eyebrow}</div>
           <h1>${s.title}</h1>
@@ -798,6 +1005,9 @@
       content.querySelectorAll('.option-card').forEach(btn => {
         btn.addEventListener('click', () => select(s.key, btn.dataset.value));
       });
+
+      const giveUp = document.getElementById('giveup-btn');
+      if (giveUp) giveUp.addEventListener('click', () => finishRouteTask('gave_up'));
 
       backBtn.style.display = state.step > 0 ? 'inline-flex' : 'none';
     } else {
@@ -820,13 +1030,7 @@
       // Finishing should release the camera without making anyone hunt for
       // the stop control. No confirmation here: saying you are done is
       // already the decision, and there is nothing left in the run to lose.
-      document.getElementById('done-btn').addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        btn.disabled = true;
-        btn.textContent = 'Finishing…';
-        await stopTracking('participant finished the study');
-        btn.textContent = 'Thanks — camera off';
-      });
+      wireDoneButton();
       backBtn.style.display = 'none';
     }
   }
@@ -978,6 +1182,10 @@
 
   var onGazeSample = function onGazeSample_(data) {
     if (!gazeOn || !data) return;
+    // Same reasoning as clicks: gaze.step only knows the selector's four
+    // screens, so time spent reading a question would be attributed to
+    // whichever step happened to be current.
+    if (!onAppScreen()) return;
     const now = Date.now();
     if (now - gazeLastSample < GAZE_SAMPLE_MS) return;
     gazeLastSample = now;
@@ -1284,6 +1492,296 @@
     }
   }
 
+
+  // =====================================================================
+  // Task battery
+  //
+  // A study is an ordered list of things asked of a participant. Some are
+  // questions, some are "do this in the app" — they differ in how they are
+  // answered and scored, not in how they are sequenced, so one runner
+  // walks the lot.
+  //
+  // With no sequenced tasks the app behaves exactly as it always did:
+  // free play, no prompts. A study that has not been designed yet should
+  // not present participants with an empty one.
+  // =====================================================================
+
+  let battery = [];
+  let taskIndex = -1;
+  let taskStartedAt = 0;
+  let routeAttempt = [];      // every pick made during the current route task
+  let routeAttempts = 1;      // how many times they have run the flow for it
+  let routeRetry = false;     // show the "not the one" note on this pass
+
+  const currentTask = () => (taskIndex >= 0 ? battery[taskIndex] : null);
+  const inBattery = () => !!currentTask();
+
+  // Whether the selector is what is actually on screen. Question blocks
+  // render into the same container and leave state.step untouched, so
+  // currentStepLabel() keeps cheerfully reporting 'number' while the
+  // participant is reading a question — and anything positional logged
+  // against that label lands on a screen they never saw.
+  const onAppScreen = () => {
+    const t = currentTask();
+    return !t || t.kind === 'app_route';
+  };
+
+  async function loadBattery() {
+    if (TRACKING_OFF || !supabaseClient) return [];
+    try {
+      const { data, error } = await supabaseClient
+        .from('tasks')
+        .select('task_id, kind, name, goal_text, config, path, binding, position')
+        .not('position', 'is', null)
+        // Belt and braces: hiding already takes a task out of the list the
+        // dashboard can sequence, but a hidden task must never reach a
+        // participant even if one somehow keeps a position.
+        .eq('hidden', false)
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) { console.warn('Could not load the task sequence:', error); return []; }
+      return data || [];
+    } catch (err) {
+      // A study that cannot load its tasks falls back to free play rather
+      // than showing a broken screen: analytics must never break the app.
+      console.warn('Could not load the task sequence:', err);
+      return [];
+    }
+  }
+
+  function recordResponse(answer) {
+    const t = currentTask();
+    if (!t) return;
+    write('task_responses', {
+      task_id: t.task_id,
+      kind: t.kind,
+      answer,
+      duration_ms: Math.max(0, Date.now() - taskStartedAt)
+    });
+  }
+
+  function nextTask() {
+    taskIndex += 1;
+    if (taskIndex >= battery.length) { renderBatteryDone(); return; }
+    renderTask();
+  }
+
+  // One dot per task, so the rail answers "how much of this is left" —
+  // the only progress question a participant actually has. The selector's
+  // own three steps are already obvious from the headings, and showing
+  // both positions at once ("Task 1 of 4 · Step 1 of 3") read as noise.
+  function renderBatteryProgress() {
+    const rail = document.getElementById('progress-rail');
+    const dots = battery.map((_, i) =>
+      `<div class="progress-dot${i <= taskIndex ? ' active' : ''}"></div>`).join('');
+    rail.innerHTML = dots
+      + '<div class="progress-spacer"></div>'
+      + `<div class="progress-label" id="progress-label">Task ${Math.min(taskIndex + 1, battery.length)} of ${battery.length}</div>`;
+  }
+
+  function renderTask() {
+    const t = currentTask();
+    taskStartedAt = Date.now();
+    renderBatteryProgress();
+
+    if (t.kind === 'app_route') {
+      // Each route task is its own attempt at the selector.
+      routeAttempt = [];
+      routeAttempts = 1;
+      routeRetry = false;
+      state.step = 0; state.number = null; state.letter = null; state.shape = null;
+      clickSeq = newClickCounts();
+      render();
+      return;
+    }
+
+    document.getElementById('back-btn').style.display = 'none';
+    renderQuestion(t);
+  }
+
+  // --- question rendering ------------------------------------------------
+  // An eleven-point ramp, sampled evenly for whatever scale length is in
+  // use. Five faces stretched over seven steps repeated two of them, so
+  // adjacent buttons looked identical and the scale read as broken.
+  // Sampling always keeps both extremes and never repeats up to 11 steps.
+  const FACE_RAMP = ['😩', '😖', '😟', '🙁', '😕', '😐', '🙂', '😊', '😄', '😁', '🤩'];
+  const faceFor = (i, steps) => steps <= 1
+    ? FACE_RAMP[FACE_RAMP.length - 1]
+    : FACE_RAMP[Math.round(i * (FACE_RAMP.length - 1) / (steps - 1))];
+
+  function renderQuestion(t) {
+    const c = t.config || {};
+    const host = document.getElementById('step-content');
+    const desc = c.description ? `<p class="q-desc">${escapeHtml(c.description)}</p>` : '';
+    const body = t.kind === 'multiple_choice' ? choiceMarkup(c) : scaleMarkup(c);
+
+    host.innerHTML = `
+      <div class="q-block">
+        <h1>${escapeHtml(t.goal_text)}</h1>
+        ${desc}
+        ${body}
+        <div class="q-actions">
+          <button class="q-continue" id="q-continue" disabled>Continue</button>
+          ${c.required === false ? '<button class="q-skip" id="q-skip">Skip this question</button>' : ''}
+        </div>
+      </div>`;
+
+    const answer = t.kind === 'multiple_choice' ? wireChoices(c) : wireScale(c);
+    const cont = document.getElementById('q-continue');
+
+    // Required means required: Continue stays dead until something is
+    // chosen, rather than letting an empty answer through as if it were one.
+    answer.onChange(ok => { cont.disabled = c.required === false ? false : !ok; });
+    if (c.required === false) cont.disabled = false;
+
+    cont.addEventListener('click', () => { recordResponse(answer.value()); nextTask(); });
+    const skip = document.getElementById('q-skip');
+    if (skip) skip.addEventListener('click', () => { recordResponse({ skipped: true }); nextTask(); });
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, ch => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+
+  // Shuffled per participant when asked for, so a choice's position cannot
+  // quietly shape how often it is picked. The order shown is recorded with
+  // the answer, or the shuffle would make the result unreadable later.
+  function shuffled(list) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function choiceMarkup(c) {
+    const opts = c.shuffle ? shuffled(c.choices || []) : (c.choices || []);
+    window.__shownOrder = opts;
+    const mark = c.select === 'multi' ? 'box' : 'radio';
+    const rows = opts.map((o, i) =>
+      `<button type="button" class="q-option" data-v="${escapeHtml(o)}">
+         <span class="mark ${mark}"></span>${escapeHtml(o)}</button>`).join('');
+    const other = c.other
+      ? `<button type="button" class="q-option" data-other="1">
+           <span class="mark ${mark}"></span>
+           <input class="other-text" placeholder="Something else…"></button>` : '';
+    const optOut = c.opt_out
+      ? `<button type="button" class="q-option" data-optout="1">
+           <span class="mark ${mark}"></span>None of these apply</button>` : '';
+    return `<div class="q-options">${rows}${other}${optOut}</div>`;
+  }
+
+  function wireChoices(c) {
+    const multi = c.select === 'multi';
+    const host = document.querySelector('.q-options');
+    let cb = () => {};
+
+    host.addEventListener('click', (e) => {
+      const btn = e.target.closest('.q-option');
+      if (!btn) return;
+      // Typing in the 'other' field should not toggle the row off again.
+      if (e.target.classList.contains('other-text')) { btn.classList.add('on'); cb(true); return; }
+      if (multi) btn.classList.toggle('on');
+      else host.querySelectorAll('.q-option').forEach(b => b.classList.toggle('on', b === btn));
+      if (btn.dataset.other) btn.querySelector('.other-text').focus();
+      cb(!!host.querySelector('.q-option.on'));
+    });
+
+    return {
+      onChange: fn => { cb = fn; },
+      value: () => {
+        const on = [...host.querySelectorAll('.q-option.on')];
+        return {
+          selected: on.filter(b => !b.dataset.other && !b.dataset.optout).map(b => b.dataset.v),
+          other: on.some(b => b.dataset.other)
+            ? (host.querySelector('.other-text').value.trim() || null) : null,
+          opted_out: on.some(b => b.dataset.optout),
+          // What they were actually shown, in the order they saw it.
+          shown_order: window.__shownOrder
+        };
+      }
+    };
+  }
+
+  function scaleMarkup(c) {
+    const steps = c.steps || 10;
+    const start = c.start_at_one === false ? 0 : 1;
+    const display = c.display || 'number';
+    const vals = Array.from({ length: steps }, (_, i) => start + i);
+    const label = (v, i) => display === 'stars' ? '★'
+                         : display === 'emotions' ? faceFor(i, steps) : v;
+    const buttons = vals.map((v, i) =>
+      `<button type="button" data-v="${v}">${label(v, i)}</button>`).join('');
+    const L = c.labels || {};
+    const labels = (L.left || L.mid || L.right)
+      ? `<div class="q-scale-labels"><span>${escapeHtml(L.left || '')}</span>`
+        + `<span>${escapeHtml(L.mid || '')}</span><span>${escapeHtml(L.right || '')}</span></div>` : '';
+    // Wrapped so the labels are as wide as the buttons they describe.
+    // Spanning the container instead put "great" a long way right of the
+    // highest rating, which reads as a different scale entirely.
+    return `<div class="q-scale-wrap"><div class="q-scale ${display}">${buttons}</div>${labels}</div>`;
+  }
+
+  function wireScale(c) {
+    const host = document.querySelector('.q-scale');
+    let cb = () => {}, picked = null;
+    host.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      picked = Number(b.dataset.v);
+      // Stars read as a filled run up to the choice; numbers and faces
+      // are a single pick, because "7 out of 10" is not seven things.
+      const all = [...host.querySelectorAll('button')];
+      all.forEach((x, i) => x.classList.toggle('on',
+        (c.display || 'number') === 'stars' ? i <= all.indexOf(b) : x === b));
+      cb(true);
+    });
+    return {
+      onChange: fn => { cb = fn; },
+      value: () => ({ rating: picked, steps: c.steps || 10,
+                      start_at: c.start_at_one === false ? 0 : 1, display: c.display || 'number' })
+    };
+  }
+
+  function renderBatteryDone() {
+    const rail = document.getElementById('progress-rail');
+    rail.innerHTML = battery.map(() => '<div class="progress-dot active"></div>').join('')
+      + '<div class="progress-spacer"></div>'
+      + '<div class="progress-label" id="progress-label">Complete</div>';
+    taskIndex = battery.length;   // out of range: inBattery() is false again
+    document.getElementById('back-btn').style.display = 'none';
+    document.getElementById('step-content').innerHTML = `
+      <div class="success">
+        <div class="success-badge">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#F0EEE6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        </div>
+        <h1>All done</h1>
+        <p class="success-copy">Thank you — that is everything we needed.</p>
+        <div class="success-actions">
+          <button class="restart-btn" id="done-btn">I'm done</button>
+        </div>
+      </div>`;
+    wireDoneButton();
+  }
+
+  // The camera is only worth mentioning to someone who turned it on.
+  // Telling a participant who declined that their camera is off is at best
+  // confusing and at worst suggests it had been on all along.
+  function wireDoneButton() {
+    const btn = document.getElementById('done-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      const wasTracking = gazeOn;
+      b.disabled = true;
+      b.textContent = 'Finishing…';
+      await stopTracking('participant finished the study');
+      b.textContent = wasTracking ? 'Thanks — camera off' : 'Thanks';
+    });
+  }
+
   document.getElementById('gaze-stop').addEventListener('click', () => {
     // Confirmed rather than immediate: it is one click away from the
     // study itself, and an accidental stop cannot be undone mid-run.
@@ -1320,6 +1818,14 @@
     // Open the session (skipped in preview mode, so the dashboard's four
     // preview frames never create phantom sessions).
     sessionReady = startSession(false);
+
+    // Only now: the battery needs a session to attach its answers to, and
+    // loading it earlier would race the insert it depends on.
+    battery = await loadBattery();
+    if (battery.length) {
+      taskIndex = -1;
+      nextTask();
+    }
 
     if (gazeOn) {
       document.getElementById('gaze-stop').hidden = false;
