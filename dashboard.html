@@ -547,6 +547,38 @@
      because the two must never be mistaken for one another when both
      are on screen: clicks are ground truth, gaze is an estimate.
      --------------------------------------------------------------- */
+
+  #gaze-details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 2px 0;
+  }
+  #gaze-details > summary::-webkit-details-marker { display: none; }
+  #gaze-details > summary::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid #8A8578;
+    border-bottom: 1.5px solid #8A8578;
+    transform: rotate(-45deg);
+    transition: transform 0.15s ease;
+    flex: none;
+  }
+  #gaze-details[open] > summary::before { transform: rotate(45deg); }
+  #gaze-details > summary:hover::before { border-color: #C15F3C; }
+
+  .gaze-summary-title {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 19px;
+    color: #29261F;
+  }
+  .gaze-summary-note { font-size: 12px; color: #8A8578; }
+  #gaze-details[open] > summary { margin-bottom: 18px; }
+
   .gaze-head {
     display: flex;
     align-items: flex-end;
@@ -853,7 +885,15 @@
          those who consented and calibrated), so folding it in beside the
          click numbers would silently mix two cohorts. -->
     <div class="panel">
-      <h2>Where they looked</h2>
+      <!-- Collapsed by default. Gaze is an estimate with real error bars,
+           and a panel that opens itself invites being read with the same
+           confidence as the click data next to it, which it has not
+           earned. Opening it is a deliberate act. -->
+      <details id="gaze-details">
+        <summary>
+          <span class="gaze-summary-title">Where they looked</span>
+          <span class="gaze-summary-note">webcam estimate · region-accurate at best</span>
+        </summary>
 
       <div class="stat-row" id="gaze-stats"></div>
 
@@ -885,7 +925,9 @@
         </div>
 
         <div class="heatmap-wrap">
-          <iframe class="heatmap-frame" id="gaze-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
+          <!-- No src until the panel is opened: a collapsed panel should
+               not be fetching a preview nobody is looking at. -->
+          <iframe class="heatmap-frame" id="gaze-frame" tabindex="-1" title="Screen preview"></iframe>
           <canvas class="heatmap-canvas" id="gaze-canvas"></canvas>
           <div class="empty-note" id="gaze-empty" hidden>No gaze recorded yet for this screen.</div>
         </div>
@@ -897,6 +939,7 @@
           and in what order, not for which single option they fixated on.
         </p>
       </div>
+      </details>
     </div>
     </div><!-- /view-analytics -->
 
@@ -1405,13 +1448,22 @@
   let currentGazeMode = 'heat';
 
   function gazeCohort(sessions) {
+    const by = st => sessions.filter(s => s.gaze_state === st);
     return {
-      tracking: sessions.filter(s => s.gaze_state === 'tracking'),
-      declined: sessions.filter(s => s.gaze_state === 'declined'),
+      // 'stopped' sessions contributed gaze up to the moment they stopped,
+      // so they count as tracked — their data is real, just partial.
+      tracking: sessions.filter(s => ['tracking', 'stopped'].includes(s.gaze_state)),
+      stopped: by('stopped'),
+      declined: by('declined'),
       // Consented, opened the camera, then abandoned setup. Worth its own
       // number: a high count means calibration is too long, not that
       // people object to being tracked.
-      gaveUp: sessions.filter(s => s.gaze_state === 'calibrating'),
+      gaveUp: by('calibrating'),
+      // Kept apart from 'declined' on purpose. A blocked camera is a
+      // permission that can be granted and a failed library is a bug on
+      // our side; neither is someone choosing not to take part, and
+      // counting them together would misreport the opt-in rate.
+      faulted: sessions.filter(s => ['blocked', 'unavailable'].includes(s.gaze_state)),
       offered: sessions.filter(s => s.gaze_state && s.gaze_state !== 'unsupported')
     };
   }
@@ -1436,9 +1488,11 @@
 
     document.getElementById('gaze-stats').innerHTML =
       card('Eye tracked', c.tracking.length,
-           optIn == null ? 'nobody was asked yet' : `${optIn}% of those asked`) +
-      card('Declined', c.declined.length, 'said no to the camera') +
+           optIn == null ? 'nobody was asked yet'
+             : `${optIn}% of those asked` + (c.stopped.length ? ` · ${c.stopped.length} stopped early` : '')) +
+      card('Declined', c.declined.length, 'chose not to') +
       card('Gave up in setup', c.gaveUp.length, 'consented, skipped calibration') +
+      card('Could not start', c.faulted.length, 'camera blocked or library failed') +
       card('Fixations', fixations.toLocaleString(),
            fixations ? `${fmtDuration(dwellMs)} of looking` : '') +
       card('Looking per person', c.tracking.length ? fmtDuration(avgMs) : '—',
@@ -1478,6 +1532,10 @@
   }
 
   function renderGaze() {
+    // Nothing to draw into while collapsed — the canvas has no size, so
+    // this would only produce a 1x1 scribble and a misleading empty-note.
+    if (!document.getElementById('gaze-details').open) return;
+
     const canvas = document.getElementById('gaze-canvas');
     const dpr = sizeCanvas(canvas);
     const ctx = canvas.getContext('2d');
@@ -1565,6 +1623,17 @@
       ctx.fillText(String(i + 1), x, y);
     });
   }
+
+  // The preview is fetched on first open, not on page load, and the
+  // canvas can only be measured once the panel has actually laid out.
+  document.getElementById('gaze-details').addEventListener('toggle', (e) => {
+    if (!e.currentTarget.open) return;
+    const frame = document.getElementById('gaze-frame');
+    if (!frame.getAttribute('src')) {
+      frame.src = `index.html?previewStep=${currentGazeStep}`;
+    }
+    renderGaze();
+  });
 
   document.getElementById('gaze-frame').addEventListener('load', renderGaze);
   window.addEventListener('resize', renderGaze);

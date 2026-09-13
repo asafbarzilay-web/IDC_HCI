@@ -90,3 +90,79 @@ alter table public.gaze alter column dur_ms drop default;
 
 alter table public.gaze drop constraint if exists gaze_dur_ms_check;
 alter table public.gaze add constraint gaze_dur_ms_check check (dur_ms > 0);
+
+-- ======================================================================
+-- Update: distinguish the ways gaze can fail to start, and let a
+-- participant stop tracking mid-run.
+-- ======================================================================
+
+-- 'declined' previously meant three different things — the participant
+-- said no, the browser refused the camera, or the library never loaded.
+-- Collapsing them made a setup fault indistinguishable from a choice,
+-- which is exactly the distinction you need when someone reports that
+-- "the camera thing didn't work".
+alter table public.sessions drop constraint if exists sessions_gaze_state_check;
+alter table public.sessions add constraint sessions_gaze_state_check
+  check (gaze_state is null or gaze_state in
+    ('unsupported',   -- no camera, insecure context, or a phone: never asked
+     'declined',      -- asked, and the participant said no
+     'blocked',       -- said yes, but the browser or OS refused the camera
+     'unavailable',   -- said yes, camera fine, but the library or model failed
+     'calibrating',   -- consented, started calibration, never finished it
+     'tracking',      -- calibrated and streaming
+     'stopped'));     -- was tracking, then the participant turned it off
+
+-- ----------------------------------------------------------------------
+-- Stopping happens long after the session row is written, so it is the
+-- one thing here that cannot be an insert. Rather than open the table to
+-- updates, the grant restricts anon to a single column and the policy
+-- restricts it to a single transition: tracking -> stopped. Nothing else
+-- about a session can be changed after the fact, including by us.
+-- ----------------------------------------------------------------------
+grant update (gaze_state) on public.sessions to anon, authenticated;
+
+drop policy if exists "stop gaze" on public.sessions;
+create policy "stop gaze" on public.sessions
+  for update to anon, authenticated
+  using (gaze_state = 'tracking')
+  with check (gaze_state = 'stopped');
+
+-- ======================================================================
+-- Correction: the update policy above cannot actually work from the app.
+--
+-- Postgres applies SELECT policies to an UPDATE that carries a WHERE
+-- clause. Reads here are restricted to authenticated users, so an anon
+-- client cannot see the row it is trying to change: the WHERE matches
+-- nothing, zero rows update, and PostgREST still answers 204. The stop
+-- looked like it worked from every angle except the data.
+--
+-- Widening the read policy to fix that would expose every session to
+-- anyone holding the publishable key. A security definer function is the
+-- narrow alternative: it runs as owner, so it can find the row, while the
+-- only thing it will ever do is the one transition, and it reports how
+-- many rows it actually changed — which is what was missing.
+-- ======================================================================
+
+drop policy if exists "stop gaze" on public.sessions;
+revoke update (gaze_state) on public.sessions from anon, authenticated;
+
+create or replace function public.stop_gaze(sid uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  update public.sessions
+     set gaze_state = 'stopped'
+   where session_id = sid
+     and gaze_state = 'tracking';   -- the only transition permitted
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+revoke all on function public.stop_gaze(uuid) from public;
+grant execute on function public.stop_gaze(uuid) to anon, authenticated;

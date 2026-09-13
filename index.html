@@ -344,6 +344,40 @@
   /* A failure here is silent by design — the study must run regardless —
      but silent also meant undiagnosable. This says what went wrong
      without blocking anything. */
+  /* Always reachable while tracking is on. Consent that cannot be
+     withdrawn mid-run is not really consent. */
+  .success-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .success-actions .restart-btn:disabled { opacity: 0.55; cursor: default; }
+
+  .gaze-stop {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 45;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font: inherit;
+    font-size: 13px;
+    color: #5C574C;
+    background: #FAF9F5;
+    border: 1px solid #D8D3C6;
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .gaze-stop[hidden] { display: none; }
+  .gaze-stop:hover { border-color: #C15F3C; color: #29261F; }
+  .gaze-stop .rec {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #C15F3C;
+  }
+
+  .gaze-confirm[hidden] { display: none; }
+
   .gaze-note {
     position: fixed;
     left: 16px;
@@ -382,6 +416,25 @@
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
+    background: #FAF9F5;
+    border-color: #C9A491;
+    color: #29261F;
+    font-size: 14px;
+    padding: 11px 20px;
+  }
+  .calib-skip:hover { border-color: #C15F3C; background: #F6E9E1; }
+
+  /* Says what skipping costs, right next to the button that does it.
+     Calibration is the whole basis of the estimate, so opting out of it
+     is opting out of eye tracking — not a shortcut into it. */
+  .calib-skip-note {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: #8A8578;
+    white-space: nowrap;
   }
 
   /* WebGazer injects its preview video with inline styles and a fixed
@@ -439,7 +492,7 @@
     <ul class="gaze-points">
       <li>The video never leaves your computer. Nothing is recorded or uploaded.</li>
       <li>Only an estimate of where on the page you were looking is saved.</li>
-      <li>There is a short setup step first: click nine dots.</li>
+      <li>There is a short setup step first: click five dots, three times each.</li>
     </ul>
     <div class="gaze-actions">
       <button class="gaze-btn primary" id="gaze-allow">Use my camera</button>
@@ -451,6 +504,22 @@
 <!-- Framing is confirmed here, while the preview is up and nothing else is
      on screen. It cannot stay visible into calibration: WebGazer parks the
      preview over the top-left corner, directly on top of the dot there. -->
+<button class="gaze-stop" id="gaze-stop" hidden>
+  <span class="rec"></span> Eye tracking on — stop
+</button>
+
+<div class="gaze-overlay gaze-confirm" id="gaze-confirm" hidden>
+  <div class="gaze-card">
+    <h1>Stop eye tracking?</h1>
+    <p>Your camera turns off and nothing more is recorded. What was already measured is kept. The tasks carry on exactly as before.</p>
+    <p>This cannot be turned back on for this run.</p>
+    <div class="gaze-actions">
+      <button class="gaze-btn primary" id="stop-confirm">Stop and turn off the camera</button>
+      <button class="gaze-btn ghost" id="stop-cancel">Keep tracking</button>
+    </div>
+  </div>
+</div>
+
 <div class="gaze-note" id="gaze-note" hidden></div>
 
 <div class="gaze-overlay" id="gaze-frame-check" hidden>
@@ -468,13 +537,14 @@
 <div class="gaze-overlay calib-overlay" id="gaze-calib" hidden>
   <div class="calib-hint" id="calib-hint">
     <strong>Look at each dot and click it</strong>
-    <span>Three clicks per dot. Keep your head still and try to look right at the dot as you click.</span>
+    <span>Three clicks per dot, five dots. Keep your head still and look right at the dot as you click.</span>
   </div>
   <!-- Progress is shown rather than implied. A dot that cannot be reached
        would otherwise stall the whole step with nothing on screen to say
        so, which is exactly how the first version failed. -->
   <div class="calib-progress" id="calib-progress"></div>
-  <button class="gaze-btn ghost calib-skip" id="calib-skip">Skip — continue without eye tracking</button>
+  <button class="gaze-btn ghost calib-skip" id="calib-skip">Skip this — no eye tracking</button>
+  <div class="calib-skip-note">The tasks work the same either way. Skipping turns the camera off.</div>
 </div>
 
 <script>
@@ -739,10 +809,24 @@
           </div>
           <h1>All set</h1>
           <p class="success-copy">You chose <strong>${state.number}, ${state.letter}, and a ${shapeLabel}</strong>.</p>
-          <button class="restart-btn" id="restart-btn">Start over</button>
+          <div class="success-actions">
+            <button class="restart-btn" id="restart-btn">Start over</button>
+            <button class="restart-btn" id="done-btn">I'm done</button>
+          </div>
         </div>`;
 
       document.getElementById('restart-btn').addEventListener('click', reset);
+
+      // Finishing should release the camera without making anyone hunt for
+      // the stop control. No confirmation here: saying you are done is
+      // already the decision, and there is nothing left in the run to lose.
+      document.getElementById('done-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = 'Finishing…';
+        await stopTracking('participant finished the study');
+        btn.textContent = 'Thanks — camera off';
+      });
       backBtn.style.display = 'none';
     }
   }
@@ -797,10 +881,17 @@
   const FIXATION_MIN_MS = 100;
 
   const CALIB_CLICKS = 3;
+  // Which entry in CALIB_POINTS sits at screen centre, under the hint text.
+  const CENTRE_POINT = 2;
+  // Four corners plus centre: 15 clicks instead of 27. The nine-point grid
+  // is the textbook one, but it costs each participant the better part of
+  // a minute before the study even starts, and the accuracy it buys back
+  // is mostly at the screen edges — which in this layout is margin. The
+  // option cards sit in the middle, where five points cover well.
   const CALIB_POINTS = [
-    [10, 12], [50, 12], [90, 12],
-    [10, 50], [50, 50], [90, 50],
-    [10, 88], [50, 88], [90, 88]
+    [12, 14], [88, 14],
+    [50, 50],
+    [12, 86], [88, 86]
   ];
 
   // True while consent or calibration owns the screen. The click logger
@@ -968,7 +1059,8 @@
           showProgress();
           // The centre dot sits under the instructions; fade them once
           // it is in play so the participant looks at the dot, not text.
-          if (i === 4) hint.classList.add('dimmed');
+          // Index of the centre point, which sits under the instructions.
+          if (i === CENTRE_POINT) hint.classList.add('dimmed');
           // Count a dot down exactly once. .done stops further clicks via
           // pointer-events, but relying on that alone is how `remaining`
           // could skip past zero and hang the step with no way forward.
@@ -993,6 +1085,101 @@
       hint.classList.remove('dimmed');
       overlay.hidden = false;
     });
+  }
+
+  // The single teardown path, used by the stop button, by "I'm done", and
+  // by any failure after tracking has begun. Idempotent: calling it twice
+  // is harmless, which matters because more than one thing can trigger it.
+  // Cuts the camera itself. webgazer.end() stops its prediction loop but
+  // leaves the MediaStream open, so the camera light stays on and the
+  // participant is told tracking stopped while the device says otherwise.
+  // Only stopping the tracks actually releases the hardware.
+  function releaseCamera() {
+    let stopped = 0;
+    document.querySelectorAll('video').forEach(v => {
+      const stream = v.srcObject;
+      if (stream && stream.getTracks) {
+        stream.getTracks().forEach(t => { try { t.stop(); stopped += 1; } catch {} });
+      }
+      v.srcObject = null;
+    });
+    const box = document.getElementById('webgazerVideoContainer');
+    if (box) box.remove();
+    return stopped;
+  }
+
+  // Confirms to the participant that the camera really is off, and in
+  // debug mode says what the database did. A stop that half-worked used
+  // to look identical to one that worked.
+  function reportStop(detail) {
+    const note = document.getElementById('gaze-note');
+    note.innerHTML = 'Eye tracking stopped. Your camera is off.<code></code>';
+    note.querySelector('code').textContent =
+      new URLSearchParams(location.search).get('debug') === '1' ? detail : '';
+    note.hidden = false;
+  }
+
+  async function stopTracking(reason) {
+    if (!gazeOn) return;
+    gazeOn = false;
+    document.getElementById('gaze-stop').hidden = true;
+
+    // Every step below is wrapped: an exception anywhere in here used to
+    // vanish into the caller's await, leaving the camera off, the record
+    // unwritten, and nothing at all to say which step failed.
+    let trace = [];
+
+    // Camera first, and synchronously. Everything after this is network or
+    // library work that can be slow or can hang; none of it may stand
+    // between the participant asking and the light going out.
+    let tracks = 0;
+    try { tracks = releaseCamera(); trace.push(`tracks:${tracks}`); }
+    catch (err) { trace.push('releaseCamera threw: ' + err.message); }
+
+    // Deliberately not awaited on its own terms: an end() that never
+    // settles used to block the flush and the database write behind it.
+    Promise.race([
+      Promise.resolve().then(() => window.webgazer && webgazer.end()),
+      new Promise(r => setTimeout(r, 2000))
+    ]).catch(err => console.warn('Tracker did not shut down cleanly:', err));
+
+    // Send what was measured. Stopping is not a reason to discard the data
+    // they already agreed to give.
+    try { closeFixation(); trace.push(`queued:${gazeBuffer.length}`); }
+    catch (err) { trace.push('closeFixation threw: ' + err.message); }
+
+    try { await flushGaze(); trace.push('flushed'); }
+    catch (err) { trace.push('flush threw: ' + err.message); }
+
+    // The session row was written at setup, long before this, so this is
+    // the one piece of state that has to be an update. The policy behind
+    // it permits exactly this transition and nothing else.
+    if (!supabaseClient) {
+      trace.push('no db client');
+    } else if (gazeState !== 'tracking') {
+      trace.push(`state was "${gazeState}", not "tracking" — nothing to update`);
+    } else {
+      const sid = sessionId, ready = sessionReady;
+      gazeState = 'stopped';
+      try {
+        await ready;
+        // Via a function, not a direct update: an anon client cannot see
+        // the row it would be updating, so a plain update matches nothing
+        // and still reports success. The function returns rows changed,
+        // so "it worked" is something we can actually check.
+        const { data, error } = await supabaseClient.rpc('stop_gaze', { sid });
+        trace.push(error ? `stop_gaze failed: ${error.message}`
+                         : (data === 1 ? 'recorded' : `no row changed (returned ${data})`));
+        if (error) console.error('could not record the stop', error);
+      } catch (err) {
+        trace.push('update threw: ' + err.message);
+        console.error('could not record the stop', err);
+      }
+    }
+
+    const detail = trace.join(' · ');
+    console.info(`Eye tracking stopped (${reason}): ${detail}`);
+    reportStop(detail);
   }
 
   // Shown while the camera preview is visible, so the participant can
@@ -1044,7 +1231,8 @@
       webgazer.showVideoPreview(true).showFaceOverlay(true).showFaceFeedbackBox(true);
 
       if (!await confirmFraming()) {
-        await webgazer.end();
+        releaseCamera();
+        Promise.resolve().then(() => webgazer.end()).catch(() => {});
         return 'calibrating';
       }
 
@@ -1056,7 +1244,10 @@
       webgazer.showVideoPreview(false).showFaceOverlay(false).showFaceFeedbackBox(false);
 
       if (!await runCalibration()) {
-        await webgazer.end();
+        // Same teardown as the stop control: the promise said the camera
+        // turns off, so the hardware has to actually be released.
+        releaseCamera();
+        Promise.resolve().then(() => webgazer.end()).catch(() => {});
         return 'calibrating';
       }
       gazeOn = true;
@@ -1078,11 +1269,38 @@
       ].join('\n');
       note.hidden = false;
       try { if (window.webgazer) await webgazer.end(); } catch {}
-      return 'declined';
+
+      // Which of these happened changes what you would do about it, so
+      // they are recorded apart. A blocked camera is a permission the
+      // participant can grant; a failed library is ours to fix; a decline
+      // is neither, and counting it as a fault would misreport consent.
+      const denied = err && (err.name === 'NotAllowedError'
+                          || err.name === 'SecurityError'
+                          || err.name === 'NotFoundError'
+                          || err.name === 'NotReadableError');
+      return denied ? 'blocked' : 'unavailable';
     } finally {
       overlayActive = false;
     }
   }
+
+  document.getElementById('gaze-stop').addEventListener('click', () => {
+    // Confirmed rather than immediate: it is one click away from the
+    // study itself, and an accidental stop cannot be undone mid-run.
+    overlayActive = true;
+    document.getElementById('gaze-confirm').hidden = false;
+  });
+
+  document.getElementById('stop-cancel').addEventListener('click', () => {
+    document.getElementById('gaze-confirm').hidden = true;
+    overlayActive = false;
+  });
+
+  document.getElementById('stop-confirm').addEventListener('click', async () => {
+    document.getElementById('gaze-confirm').hidden = true;
+    overlayActive = false;
+    await stopTracking('participant used the stop control');
+  });
 
   // Paint first, then start tracking — the selector must appear even if
   // analytics is unavailable.
@@ -1104,6 +1322,8 @@
     sessionReady = startSession(false);
 
     if (gazeOn) {
+      document.getElementById('gaze-stop').hidden = false;
+
       // Opt-in live readout. Whether clustering is working is otherwise
       // invisible until the run is over and the rows are queried, which
       // makes every tuning change a full round trip.
