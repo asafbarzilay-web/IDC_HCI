@@ -758,11 +758,15 @@
     border-radius: 10px;
     background: #F0EEE6;
   }
+  /* Wider than the app's 560px content column on purpose: the frame's own
+     innerWidth is what responsive layouts read, and at 560 the matrix
+     decided it was on a small screen and previewed the stacked variant a
+     desktop participant would never see. */
   .q-preview-stage iframe {
     position: absolute;
     top: 0; left: 0;
-    width: 560px;
-    height: 660px;
+    width: 900px;
+    height: 760px;
     border: none;
     transform-origin: top left;
     background: #F0EEE6;
@@ -2324,7 +2328,6 @@
   function taskEssence(t, kind) {
     const c = t.config || {};
     let meta;
-    void 0;
     if (kind === 'app_route') {
       const route = (t.path || []).map(p =>
         (t.binding || []).includes(p.step) ? `<b>${p.value}</b>` : p.value).join(' → ');
@@ -2342,6 +2345,13 @@
       const L = c.labels || {};
       const ends = (L.left || L.right) ? ` · “${L.left || ''}” to “${L.right || ''}”` : '';
       meta = `${c.display || 'number'} scale, ${lo}–${lo + (c.steps || 10) - 1}${ends}`;
+    } else if (kind === 'yes_no') {
+      meta = c.display === 'emotions' ? 'yes / no, shown as faces' : 'yes / no, shown as icons';
+    } else if (kind === 'simple_input') {
+      meta = `free ${c.input_type || 'text'} answer`;
+    } else if (kind === 'matrix') {
+      meta = `${(c.statements || []).length} statements × ${(c.choices || []).length} choices · `
+           + (c.select === 'multi' ? 'pick several' : 'pick one') + ' per statement';
     } else {
       meta = TASK_KINDS[kind] ? TASK_KINDS[kind].label : kind;
     }
@@ -2355,11 +2365,19 @@
     };
   }
 
+  const SUMMARISERS = {
+    app_route: routeSummary,
+    multiple_choice: choiceSummary,
+    opinion_scale: scaleSummary,
+    yes_no: yesNoSummary,
+    matrix: matrixSummary,
+    simple_input: inputSummary
+  };
+
   function summarise(kind, rows) {
-    return kind === 'app_route' ? routeSummary(rows)
-         : kind === 'multiple_choice' ? choiceSummary(rows)
-         : kind === 'opinion_scale' ? scaleSummary(rows)
-         : { bars: '<div class="empty-note">No summary for this type yet.</div>', side: '' };
+    const fn = SUMMARISERS[kind];
+    return fn ? fn(rows)
+      : { bars: '<div class="empty-note">No summary for this type yet.</div>', side: '' };
   }
 
 
@@ -2392,6 +2410,23 @@
             c.shuffle && 'order shuffled per participant',
             c.other && "'other' write-in allowed",
             c.opt_out && "'none of these' allowed",
+            c.required === false ? 'skippable' : 'answer required'
+          ]));
+    } else if (kind === 'yes_no') {
+      specific = row('Shown as', c.display === 'emotions' ? 'faces (🙂 / 🙁)' : 'icons (✓ / ✗)')
+        + row('Options', flags([c.required === false ? 'skippable' : 'answer required']));
+    } else if (kind === 'simple_input') {
+      specific = row('Answer type', esc(c.input_type || 'text'))
+        + row('Options', flags([c.required === false ? 'skippable' : 'answer required']));
+    } else if (kind === 'matrix') {
+      specific = row('Statements', `<ol>${(c.statements || []).map(x => `<li>${esc(x)}</li>`).join('')}</ol>`)
+        + row('Shared choices', `<ol>${(c.choices || []).map(x => `<li>${esc(x)}</li>`).join('')}</ol>`)
+        + row('Options', flags([
+            c.select === 'multi' ? 'pick several per statement' : 'pick one per statement',
+            c.shuffle_statements && 'statements shuffled',
+            c.shuffle_choices && 'choices shuffled',
+            c.opt_out && "'none of these' allowed",
+            c.optimize_small && 'stacks on small screens',
             c.required === false ? 'skippable' : 'answer required'
           ]));
     } else if (kind === 'opinion_scale') {
@@ -2502,6 +2537,86 @@
     taskCohort().flatMap(s => s.task_responses || []).filter(r => r.task_id === taskId);
 
   let heatSeq = 0;   // unique ids for the per-task heatmap canvases
+
+  function yesNoSummary(rows) {
+    const total = rows.length;
+    const n = v => rows.filter(r => (r.answer || {}).choice === v).length;
+    const time = stageStats(rows.map(r => r.duration_ms));
+    const yes = n('yes');
+    return {
+      bars: trBar('Yes', yes, total) + trBar('No', n('no'), total),
+      side: trMetric('Said yes', total ? `${Math.round((yes / total) * 100)}%` : '—', `${yes} of ${total}`)
+          + trMetric('Time to answer', time ? fmtDuration(time.avg) : '—',
+                     time ? `median ${fmtDuration(time.median)}` : '')
+    };
+  }
+
+  function matrixSummary(rows) {
+    // One block per statement: a matrix is several questions sharing a set
+    // of answers, and collapsing them into one chart would merge findings
+    // that are only comparable side by side.
+    const perStatement = {};
+    let optedOut = 0;
+    rows.forEach(r => {
+      const a = r.answer || {};
+      if (a.opted_out) optedOut += 1;
+      Object.entries(a.rows || {}).forEach(([st, picks]) => {
+        perStatement[st] = perStatement[st] || { answered: 0, counts: {} };
+        perStatement[st].answered += 1;
+        (picks || []).forEach(p => {
+          perStatement[st].counts[p] = (perStatement[st].counts[p] || 0) + 1;
+        });
+      });
+    });
+    const time = stageStats(rows.map(r => r.duration_ms));
+    const blocks = Object.entries(perStatement).map(([st, d]) => {
+      const ordered = Object.entries(d.counts).sort((a, b) => b[1] - a[1]);
+      return `<div class="tr-layer-title" style="margin-top:14px">${st}</div>`
+        + ordered.map(([v, n]) => trBar(v, n, d.answered)).join('');
+    }).join('');
+
+    return {
+      bars: blocks || '<div class="empty-note">No statements answered.</div>',
+      side: trMetric('Responses', rows.length, '')
+          + (optedOut ? trMetric('Opted out', optedOut, 'none of these applied') : '')
+          + trMetric('Time to answer', time ? fmtDuration(time.avg) : '—',
+                     time ? `median ${fmtDuration(time.median)}` : '')
+    };
+  }
+
+  function inputSummary(rows) {
+    const vals = rows.map(r => (r.answer || {}).value).filter(v => v != null && v !== '');
+    const type = (rows[0] && rows[0].answer && rows[0].answer.input_type) || 'text';
+    const time = stageStats(rows.map(r => r.duration_ms));
+
+    // Numbers get summarised; text gets shown. An average of free text is
+    // not a thing, and a list of 200 numbers is not a finding.
+    if (type === 'number') {
+      const nums = vals.map(Number).filter(Number.isFinite);
+      const stats = stageStats(nums);
+      const counts = {};
+      nums.forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+      return {
+        bars: Object.entries(counts).sort((a, b) => Number(a[0]) - Number(b[0]))
+                .map(([v, n]) => trBar(v, n, nums.length)).join(''),
+        side: trMetric('Average', stats ? stats.avg.toFixed(1) : '—',
+                       stats ? `median ${stats.median} · ${stats.min}–${stats.max}` : '')
+            + trMetric('Responses', rows.length, '')
+      };
+    }
+
+    return {
+      bars: vals.length
+        ? `<div class="td-val"><ul>${vals.slice(0, 40).map(v =>
+            `<li>${String(v).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]))}</li>`).join('')}</ul>`
+          + (vals.length > 40 ? `<div class="tr-metric-sub">and ${vals.length - 40} more</div>` : '')
+          + '</div>'
+        : '<div class="empty-note">No answers yet.</div>',
+      side: trMetric('Responses', rows.length, '')
+          + trMetric('Time to answer', time ? fmtDuration(time.avg) : '—',
+                     time ? `median ${fmtDuration(time.median)}` : '')
+    };
+  }
 
   function renderTaskResultBody(t, rows, opts = {}) {
     const kind = (rows[0] && rows[0].kind) || t.kind || 'app_route';
@@ -3317,9 +3432,9 @@
       blurb: 'Rate something from 1 to N, as numbers, stars or faces.',
       built: true
     },
-    yes_no:      { label: 'Yes / No',     blurb: 'A single binary question.',                     built: false },
-    matrix:      { label: 'Matrix',       blurb: 'Several statements sharing one set of choices.', built: false },
-    simple_input:{ label: 'Simple input', blurb: 'A free-text, number, date or email answer.',     built: false }
+    yes_no:      { label: 'Yes / No',     blurb: 'A single binary question.',                     built: true },
+    matrix:      { label: 'Matrix',       blurb: 'Several statements sharing one set of choices.', built: true },
+    simple_input:{ label: 'Simple input', blurb: 'A free-text, number, date or email answer.',     built: true }
   };
 
   let authoringKind = null;
@@ -3384,7 +3499,8 @@
         <textarea id="q-description" rows="2" placeholder="Type extra details here. This is optional."></textarea>
       </div>`;
 
-    const specific = kind === 'multiple_choice' ? `
+    const byKind = {};
+    byKind.multiple_choice = `
       <div class="q-row">
         <label>Type</label>
         ${qSeg('q-select', [['single', 'Single-select'], ['multi', 'Multi-select']], 'single')}
@@ -3397,7 +3513,41 @@
       ${qToggle('q-shuffle', 'Shuffle choices', 'Randomise the order per participant, so position bias does not shape the result', false)}
       ${qToggle('q-other', "'Other' option", 'Let participants enter a custom answer', false)}
       ${qToggle('q-optout', "'Opt out' option", 'Let participants indicate that none of the options apply', false)}
-    ` : `
+    `;
+
+    byKind.yes_no = `
+      <div class="q-row">
+        <label>Type</label>
+        ${qSeg('q-display', [['icons', 'Icons'], ['emotions', 'Emotions']], 'icons')}
+      </div>`;
+
+    byKind.simple_input = `
+      <div class="q-row">
+        <label>Answer type</label>
+        ${qSeg('q-input-type', [['text', 'Text'], ['number', 'Number'], ['date', 'Date'], ['email', 'Email']], 'text')}
+      </div>`;
+
+    byKind.matrix = `
+      <div class="q-row">
+        <label>Type</label>
+        ${qSeg('q-select', [['single', 'Single-select'], ['multi', 'Multi-select']], 'single')}
+      </div>
+      <div class="q-row">
+        <label>Statements *</label>
+        <div id="q-statements"></div>
+        <button type="button" class="signout-btn" id="q-add-statement">+ Add statement</button>
+      </div>
+      ${qToggle('q-shuffle-statements', 'Shuffle statements', 'Randomise their order per participant', false)}
+      <div class="q-row">
+        <label>Choices * <span style="color:#8A8578">— shared by every statement</span></label>
+        <div id="q-choices"></div>
+        <button type="button" class="signout-btn" id="q-add-choice">+ Add choice</button>
+      </div>
+      ${qToggle('q-shuffle', 'Shuffle choices', 'Randomise their order per participant', false)}
+      ${qToggle('q-optout', "'Opt out' option", 'Let participants indicate that none of the statements apply', false)}
+      ${qToggle('q-small', 'Optimise for small screens', 'On a narrow screen, show a vertical list per statement instead of a grid', true)}`;
+
+    byKind.opinion_scale = `
       <div class="q-row">
         <label>Type</label>
         ${qSeg('q-display', [['number', 'Number'], ['stars', 'Stars'], ['emotions', 'Emotions']], 'number')}
@@ -3415,6 +3565,8 @@
           <input type="text" id="q-label-right" placeholder="Right">
         </div>
       </div>`;
+
+    const specific = byKind[kind] || '';
 
     host.innerHTML = `
       <div class="author-head">
@@ -3443,10 +3595,15 @@
         </div>
       </div>`;
 
-    if (kind === 'multiple_choice') {
+    if (kind === 'multiple_choice' || kind === 'matrix') {
       addChoiceRow(); addChoiceRow();
       document.getElementById('q-add-choice').addEventListener('click', () => addChoiceRow());
-    } else {
+    }
+    if (kind === 'matrix') {
+      addStatementRow(); addStatementRow();
+      document.getElementById('q-add-statement').addEventListener('click', () => addStatementRow());
+    }
+    if (kind === 'opinion_scale') {
       const steps = document.getElementById('q-steps');
       steps.addEventListener('input', () => {
         document.getElementById('q-steps-out').textContent = steps.value;
@@ -3490,14 +3647,33 @@
       description: q('q-description') ? q('q-description').value.trim() : '',
       required: q('q-required') ? q('q-required').checked : true
     };
+    const listOf = sel => [...document.querySelectorAll(sel)]
+      .map(i => i.value.trim()).filter(Boolean);
+
     if (authoringKind === 'multiple_choice') {
       return Object.assign(base, {
         select: segValue('q-select'),
-        choices: [...document.querySelectorAll('#q-choices input')]
-          .map(i => i.value.trim()).filter(Boolean),
+        choices: listOf('#q-choices input'),
         shuffle: q('q-shuffle').checked,
         other: q('q-other').checked,
         opt_out: q('q-optout').checked
+      });
+    }
+    if (authoringKind === 'yes_no') {
+      return Object.assign(base, { display: segValue('q-display') });
+    }
+    if (authoringKind === 'simple_input') {
+      return Object.assign(base, { input_type: segValue('q-input-type') });
+    }
+    if (authoringKind === 'matrix') {
+      return Object.assign(base, {
+        select: segValue('q-select'),
+        statements: listOf('#q-statements input'),
+        choices: listOf('#q-choices input'),
+        shuffle_statements: q('q-shuffle-statements').checked,
+        shuffle_choices: q('q-shuffle').checked,
+        opt_out: q('q-optout').checked,
+        optimize_small: q('q-small').checked
       });
     }
     return Object.assign(base, {
@@ -3555,11 +3731,20 @@
     // nothing to show. Wait for a real width rather than render invisibly.
     const width = stage.clientWidth;
     if (!width) { requestAnimationFrame(scalePreview); return; }
-    const scale = Math.min(1, width / 560);
+    const scale = Math.min(1, width / 900);
     frame.style.transform = `scale(${scale})`;
-    stage.style.height = `${660 * scale}px`;
+    stage.style.height = `${760 * scale}px`;
   }
   window.addEventListener('resize', scalePreview);
+
+  function addStatementRow(value = '') {
+    const row = document.createElement('div');
+    row.className = 'q-choice';
+    row.innerHTML = `<input type="text" placeholder="Enter statement"><button type="button" title="Remove">&times;</button>`;
+    row.querySelector('input').value = value;
+    row.querySelector('button').addEventListener('click', () => row.remove());
+    document.getElementById('q-statements').appendChild(row);
+  }
 
   function addChoiceRow(value = '') {
     const row = document.createElement('div');
@@ -3583,12 +3768,17 @@
     const config = collectConfig();
     let problem = null;
 
-    if (authoringKind === 'multiple_choice') {
+    if (authoringKind === 'multiple_choice' || authoringKind === 'matrix') {
       const choices = config.choices;
       // Two is the floor for a choice to be a choice. One option is a
       // statement, and it would record unanimous agreement that means nothing.
       if (choices.length < 2) problem = 'Give at least two choices — one option is not a question.';
       if (new Set(choices).size !== choices.length) problem = 'Two choices are identical, so their answers could never be told apart.';
+    }
+    if (authoringKind === 'matrix') {
+      const st = config.statements;
+      if (!st.length) problem = 'Add at least one statement — a matrix with no rows asks nothing.';
+      if (new Set(st).size !== st.length) problem = 'Two statements are identical, so their answers could never be told apart.';
     }
 
     if (!question) problem = 'Write the question the participant reads.';
@@ -3715,6 +3905,22 @@
         if (c.other) bits.push("'other'");
         if (c.opt_out) bits.push("'opt out'");
         if (c.shuffle) bits.push('shuffled');
+        return `${tag} <span style="color:#8A8578">${bits.join(' · ')}</span>`;
+      }
+
+      if (kind === 'yes_no') {
+        return `${tag} <span style="color:#8A8578">${c.display === 'emotions' ? 'faces' : 'icons'}</span>`;
+      }
+
+      if (kind === 'simple_input') {
+        return `${tag} <span style="color:#8A8578">${c.input_type || 'text'} answer</span>`;
+      }
+
+      if (kind === 'matrix') {
+        const st = (c.statements || []).length, ch = (c.choices || []).length;
+        const bits = [`${st} statement${st === 1 ? '' : 's'}`, `${ch} choice${ch === 1 ? '' : 's'}`,
+                      c.select === 'multi' ? 'pick several' : 'pick one'];
+        if (c.opt_out) bits.push("'opt out'");
         return `${tag} <span style="color:#8A8578">${bits.join(' · ')}</span>`;
       }
 

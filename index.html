@@ -359,6 +359,53 @@
   .q-scale-labels span:nth-child(2) { text-align: center; }
   .q-scale-labels span:last-child { text-align: right; }
 
+
+  /* Yes/No: two large targets rather than a list, because a binary answer
+     should not look like a list that happens to have two entries. */
+  .q-binary { display: flex; gap: 14px; flex-wrap: wrap; }
+  .q-binary button {
+    flex: 1 1 160px;
+    font: inherit;
+    background: #FAF9F5;
+    border: 1px solid #E0DBCE;
+    border-radius: 14px;
+    padding: 26px 18px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .q-binary button:hover { border-color: #C9A491; }
+  .q-binary button.on { border-color: #C15F3C; background: #F6E9E1; }
+  .q-binary .glyph { font-size: 30px; line-height: 1; }
+  .q-binary .word { font-size: 17px; color: #29261F; }
+
+  /* Matrix: a grid on anything with room, a stack of small groups when
+     there is not — a grid squeezed onto a phone is unreadable either way. */
+  .q-matrix { width: 100%; border-collapse: collapse; }
+  .q-matrix th, .q-matrix td { padding: 10px 8px; text-align: center; }
+  .q-matrix th { font-size: 12px; font-weight: 500; color: #6B665A; }
+  .q-matrix th.stmt, .q-matrix td.stmt {
+    text-align: left; font-size: 15px; color: #29261F; width: 40%;
+  }
+  .q-matrix tbody tr:nth-child(odd) { background: #FAF9F5; }
+  .q-matrix tbody tr td:first-child { border-radius: 8px 0 0 8px; }
+  .q-matrix tbody tr td:last-child { border-radius: 0 8px 8px 0; }
+  .q-cell { width: 20px; height: 20px; border: 1.5px solid #C9A491; background: #FFF; cursor: pointer; display: inline-block; }
+  .q-cell.radio { border-radius: 50%; }
+  .q-cell.box { border-radius: 5px; }
+  .q-cell.on { border-color: #C15F3C; background: #C15F3C; box-shadow: inset 0 0 0 3px #FAF9F5; }
+
+  .q-matrix-stack .stack-group { margin-bottom: 18px; }
+  .q-matrix-stack .stack-stmt { font-size: 15px; color: #29261F; margin-bottom: 8px; }
+
+  .q-input {
+    width: 100%; font: inherit; font-size: 17px;
+    padding: 14px 16px; border: 1px solid #E0DBCE; border-radius: 12px;
+    background: #FAF9F5; color: #29261F;
+  }
+  .q-input:focus { outline: none; border-color: #C15F3C; background: #FFF; }
+  .q-input-note { font-size: 12px; color: #8A8578; margin-top: 8px; }
+
   .q-actions { margin-top: 30px; display: flex; align-items: center; gap: 14px; }
   .q-continue {
     font: inherit; font-size: 15px;
@@ -1667,7 +1714,7 @@
     const c = t.config || {};
     const host = document.getElementById('step-content');
     const desc = c.description ? `<p class="q-desc">${escapeHtml(c.description)}</p>` : '';
-    const body = t.kind === 'multiple_choice' ? choiceMarkup(c) : scaleMarkup(c);
+    const body = QUESTION_BODY[t.kind] ? QUESTION_BODY[t.kind](c) : choiceMarkup(c);
 
     host.innerHTML = `
       <div class="q-block">
@@ -1680,7 +1727,7 @@
         </div>
       </div>`;
 
-    const answer = t.kind === 'multiple_choice' ? wireChoices(c) : wireScale(c);
+    const answer = (QUESTION_WIRE[t.kind] || wireChoices)(c);
     const cont = document.getElementById('q-continue');
 
     // A preview is interactive so you can see the selected state, but it
@@ -1806,6 +1853,174 @@
                       start_at: c.start_at_one === false ? 0 : 1, display: c.display || 'number' })
     };
   }
+
+
+  // --- Yes / No ----------------------------------------------------------
+  function yesNoMarkup(c) {
+    const emo = c.display === 'emotions';
+    const opt = (v, glyph, word) =>
+      `<button type="button" data-v="${v}"><span class="glyph">${glyph}</span><span class="word">${word}</span></button>`;
+    return `<div class="q-binary">
+      ${opt('yes', emo ? '🙂' : '✓', 'Yes')}
+      ${opt('no',  emo ? '🙁' : '✗', 'No')}
+    </div>`;
+  }
+
+  function wireYesNo() {
+    const host = document.querySelector('.q-binary');
+    let cb = () => {}, picked = null;
+    host.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      picked = b.dataset.v;
+      host.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      cb(true);
+    });
+    return { onChange: fn => { cb = fn; }, value: () => ({ choice: picked }) };
+  }
+
+  // --- Matrix ------------------------------------------------------------
+  // Statements down the side, one shared set of choices across the top.
+  function matrixMarkup(c) {
+    const statements = c.shuffle_statements ? shuffled(c.statements || []) : (c.statements || []);
+    const choices = c.shuffle_choices ? shuffled(c.choices || []) : (c.choices || []);
+    // Recorded with the answer: shuffled order is unreadable afterwards
+    // without knowing what order it was.
+    window.__matrixOrder = { statements, choices };
+    const mark = c.select === 'multi' ? 'box' : 'radio';
+
+    // A grid needs horizontal room per choice. Below that it stops being
+    // a grid you can read and becomes one you have to decode.
+    const stack = c.optimize_small && window.innerWidth < 620;
+
+    const optOut = c.opt_out
+      ? `<div class="q-options" style="margin-top:14px">
+           <button type="button" class="q-option" data-optout="1">
+             <span class="mark ${mark}"></span>None of these apply</button>
+         </div>` : '';
+
+    if (stack) {
+      return `<div class="q-matrix-stack">
+        ${statements.map(st => `
+          <div class="stack-group" data-stmt="${escapeHtml(st)}">
+            <div class="stack-stmt">${escapeHtml(st)}</div>
+            <div class="q-options">
+              ${choices.map(ch => `
+                <button type="button" class="q-option" data-stmt="${escapeHtml(st)}" data-v="${escapeHtml(ch)}">
+                  <span class="mark ${mark}"></span>${escapeHtml(ch)}</button>`).join('')}
+            </div>
+          </div>`).join('')}
+        ${optOut}</div>`;
+    }
+
+    return `<table class="q-matrix">
+      <thead><tr><th class="stmt"></th>
+        ${choices.map(ch => `<th>${escapeHtml(ch)}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${statements.map(st => `<tr data-stmt="${escapeHtml(st)}">
+          <td class="stmt">${escapeHtml(st)}</td>
+          ${choices.map(ch => `<td>
+            <span class="q-cell ${mark}" data-stmt="${escapeHtml(st)}" data-v="${escapeHtml(ch)}"></span>
+          </td>`).join('')}
+        </tr>`).join('')}
+      </tbody></table>${optOut}`;
+  }
+
+  function wireMatrix(c) {
+    const multi = c.select === 'multi';
+    const statements = (window.__matrixOrder || {}).statements || c.statements || [];
+    const host = document.getElementById('step-content');
+    let cb = () => {};
+    const picked = {};      // statement -> Set of choices
+    let optedOut = false;
+
+    const ready = () => optedOut
+      || statements.every(st => picked[st] && picked[st].size);
+
+    host.addEventListener('click', (e) => {
+      const out = e.target.closest('[data-optout]');
+      if (out) {
+        optedOut = !optedOut;
+        out.classList.toggle('on', optedOut);
+        // Opting out and answering rows are mutually exclusive claims.
+        if (optedOut) {
+          Object.keys(picked).forEach(k => delete picked[k]);
+          host.querySelectorAll('.q-cell.on, .q-option.on').forEach(x => {
+            if (!x.dataset.optout) x.classList.remove('on');
+          });
+        }
+        cb(ready());
+        return;
+      }
+
+      const cell = e.target.closest('[data-stmt][data-v]');
+      if (!cell) return;
+      if (optedOut) {
+        optedOut = false;
+        const o = host.querySelector('[data-optout]');
+        if (o) o.classList.remove('on');
+      }
+      const st = cell.dataset.stmt, v = cell.dataset.v;
+      picked[st] = picked[st] || new Set();
+
+      if (multi) {
+        picked[st].has(v) ? picked[st].delete(v) : picked[st].add(v);
+        cell.classList.toggle('on');
+      } else {
+        picked[st].clear(); picked[st].add(v);
+        host.querySelectorAll(`[data-stmt="${CSS.escape(st)}"][data-v]`)
+          .forEach(x => x.classList.toggle('on', x === cell));
+      }
+      cb(ready());
+    });
+
+    return {
+      onChange: fn => { cb = fn; },
+      value: () => ({
+        rows: Object.fromEntries(Object.entries(picked).map(([k, v]) => [k, [...v]])),
+        opted_out: optedOut,
+        shown_order: window.__matrixOrder
+      })
+    };
+  }
+
+  // --- Simple input ------------------------------------------------------
+  function inputMarkup(c) {
+    const type = c.input_type || 'text';
+    const ph = { text: 'Type your answer here', number: 'Enter a number',
+                 date: '', email: 'name@example.com' }[type] || '';
+    return `<input class="q-input" id="q-free-input" type="${type}" placeholder="${ph}">`
+      + (type === 'email' ? '<div class="q-input-note">We only use this to identify your answers.</div>' : '');
+  }
+
+  function wireInput(c) {
+    const el = document.getElementById('q-free-input');
+    let cb = () => {};
+    // Browser validity covers the shape of an email or a number; empty is
+    // handled separately so a blank field never counts as an answer.
+    const ok = () => el.value.trim() !== '' && el.checkValidity();
+    el.addEventListener('input', () => cb(ok()));
+    return {
+      onChange: fn => { cb = fn; },
+      value: () => ({ value: el.value.trim(), input_type: c.input_type || 'text' })
+    };
+  }
+
+  const QUESTION_BODY = {
+    multiple_choice: choiceMarkup,
+    opinion_scale: scaleMarkup,
+    yes_no: yesNoMarkup,
+    matrix: matrixMarkup,
+    simple_input: inputMarkup
+  };
+
+  const QUESTION_WIRE = {
+    multiple_choice: wireChoices,
+    opinion_scale: wireScale,
+    yes_no: wireYesNo,
+    matrix: wireMatrix,
+    simple_input: wireInput
+  };
 
   function renderBatteryDone() {
     const rail = document.getElementById('progress-rail');
