@@ -743,8 +743,30 @@
   }
   .author-head h2 { margin: 0; }
 
-  .q-split { display: grid; grid-template-columns: 1fr 300px; gap: 28px; align-items: start; }
+  .q-split { display: grid; grid-template-columns: 1fr 340px; gap: 28px; align-items: start; }
   @media (max-width: 900px) { .q-split { grid-template-columns: 1fr; } }
+
+  /* The app renders at its own width; the stage scales it to fit the
+     column rather than letting it lay out cramped and preview a layout
+     no participant would see. */
+  .q-preview-stage {
+    position: relative;
+    width: 100%;
+    height: 430px;
+    overflow: hidden;
+    border: 1px solid #E0DBCE;
+    border-radius: 10px;
+    background: #F0EEE6;
+  }
+  .q-preview-stage iframe {
+    position: absolute;
+    top: 0; left: 0;
+    width: 560px;
+    height: 660px;
+    border: none;
+    transform-origin: top left;
+    background: #F0EEE6;
+  }
 
   .q-preview {
     position: sticky;
@@ -761,35 +783,6 @@
     color: #8A8578;
     margin-bottom: 14px;
   }
-  .q-preview h4 {
-    font-family: 'Newsreader', Georgia, serif;
-    font-size: 18px;
-    font-weight: 500;
-    margin: 0 0 6px;
-    color: #29261F;
-  }
-  .q-preview .pv-desc { font-size: 12px; color: #6B665A; margin: 0 0 14px; line-height: 1.5; }
-  .q-preview .pv-opt {
-    display: flex; align-items: center; gap: 9px;
-    background: #FAF9F5; border: 1px solid #E0DBCE; border-radius: 9px;
-    padding: 9px 11px; margin-bottom: 7px; font-size: 13px; color: #29261F;
-  }
-  .q-preview .pv-mark { width: 14px; height: 14px; border: 1.5px solid #C9A491; background: #fff; flex: none; }
-  .q-preview .pv-mark.radio { border-radius: 50%; }
-  .q-preview .pv-mark.box { border-radius: 4px; }
-  .q-preview .pv-scale { display: flex; gap: 5px; flex-wrap: wrap; }
-  .q-preview .pv-scale span {
-    min-width: 30px; height: 30px;
-    display: inline-flex; align-items: center; justify-content: center;
-    border: 1px solid #E0DBCE; background: #FAF9F5; border-radius: 7px;
-    font-size: 13px; color: #29261F;
-  }
-  .q-preview .pv-scale.stars span, .q-preview .pv-scale.emotions span { font-size: 15px; }
-  .q-preview .pv-labels {
-    display: flex; justify-content: space-between; gap: 8px;
-    margin-top: 8px; font-size: 10px; color: #8A8578;
-  }
-  .q-preview .pv-empty { font-size: 12px; color: #A8A296; font-style: italic; }
 
   .task-delete { color: #A94E2E !important; border-color: #E4CDBE !important; }
   .task-delete:hover { background: #F6E9E1 !important; }
@@ -3372,6 +3365,11 @@
 
   function renderQuestionForm(kind) {
     const host = document.getElementById('form-question');
+    // Re-rendering the form replaces the preview iframe, so the readiness
+    // of the previous one says nothing about this one. Left true, the
+    // config would be posted into a frame that has not loaded and silently
+    // dropped — a preview that stays blank with no error anywhere.
+    previewReady = false;
     const common = `
       <div class="q-row">
         <label for="q-name">Task name <span style="color:#8A8578">— for your reference, participants never see it</span></label>
@@ -3438,7 +3436,10 @@
              between stars and faces is entirely a visual one. -->
         <div class="q-preview">
           <div class="q-preview-label">What participants see</div>
-          <div id="q-preview"></div>
+          <div class="q-preview-stage">
+            <iframe id="q-preview-frame" src="index.html?previewQuestion=1"
+                    title="Question preview" tabindex="-1"></iframe>
+          </div>
         </div>
       </div>`;
 
@@ -3473,8 +3474,12 @@
     // Any edit redraws the preview. Listening on the container rather than
     // each control means rows added later are covered without rewiring.
     ['input', 'change', 'click'].forEach(ev =>
-      host.addEventListener(ev, () => setTimeout(renderPreview, 0)));
-    renderPreview();
+      host.addEventListener(ev, () => setTimeout(postPreview, 0)));
+    scalePreview();
+    // The frame may finish loading after this runs; both paths scale.
+    document.getElementById('q-preview-frame')
+      .addEventListener('load', scalePreview);
+    postPreview();
   }
 
   // Reads the form as it stands. Used by both the preview and the save, so
@@ -3509,46 +3514,52 @@
 
   // Must match the app's ramp, or the preview shows a scale the
   // participant never sees. See FACE_RAMP in index.html.
-  const PV_FACE_RAMP = ['😩', '😖', '😟', '🙁', '😕', '😐', '🙂', '😊', '😄', '😁', '🤩'];
-  const pvFace = (i, steps) => steps <= 1
-    ? PV_FACE_RAMP[PV_FACE_RAMP.length - 1]
-    : PV_FACE_RAMP[Math.round(i * (PV_FACE_RAMP.length - 1) / (steps - 1))];
+  // The preview is the real app, not a drawing of it.
+  //
+  // It used to be a second implementation of every question type living in
+  // this file. That made "what participants see" a promise kept by hand,
+  // and it had already broken once: the emoji ramp repeated faces and had
+  // to be fixed in both places. An iframe of index.html cannot drift,
+  // because it is the thing it is previewing.
+  let previewReady = false;
 
-  function renderPreview() {
-    const host = document.getElementById('q-preview');
-    if (!host) return;
-    const c = collectConfig();
-    const question = document.getElementById('q-question').value.trim();
-    const esc = t => String(t).replace(/[&<>"]/g, ch =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-
-    let body;
-    if (authoringKind === 'multiple_choice') {
-      const mark = c.select === 'multi' ? 'box' : 'radio';
-      const rows = c.choices.map(o =>
-        `<div class="pv-opt"><span class="pv-mark ${mark}"></span>${esc(o)}</div>`);
-      if (c.other)   rows.push(`<div class="pv-opt"><span class="pv-mark ${mark}"></span><i>Something else…</i></div>`);
-      if (c.opt_out) rows.push(`<div class="pv-opt"><span class="pv-mark ${mark}"></span>None of these apply</div>`);
-      body = rows.length ? rows.join('') : '<div class="pv-empty">Add some choices…</div>';
-    } else {
-      const start = c.start_at_one ? 1 : 0;
-      const vals = Array.from({ length: c.steps }, (_, i) => start + i);
-      const cells = vals.map((v, i) =>
-        `<span>${c.display === 'stars' ? '★'
-               : c.display === 'emotions' ? pvFace(i, c.steps) : v}</span>`).join('');
-      const L = c.labels;
-      const labels = (L.left || L.mid || L.right)
-        ? `<div class="pv-labels"><span>${esc(L.left)}</span><span>${esc(L.mid)}</span><span>${esc(L.right)}</span></div>` : '';
-      body = `<div style="display:inline-block;max-width:100%">`
-           + `<div class="pv-scale ${c.display}">${cells}</div>${labels}</div>`;
-    }
-
-    host.innerHTML =
-      `<h4>${question ? esc(question) : '<span class="pv-empty">Your question…</span>'}</h4>`
-      + (c.description ? `<p class="pv-desc">${esc(c.description)}</p>` : '')
-      + body
-      + (c.required === false ? '<p class="pv-desc" style="margin-top:12px">Skippable</p>' : '');
+  function postPreview() {
+    const frame = document.getElementById('q-preview-frame');
+    if (!frame || !previewReady || !authoringKind) return;
+    frame.contentWindow.postMessage({
+      source: 'idc-hci-preview',
+      kind: authoringKind,
+      goal_text: document.getElementById('q-question').value.trim(),
+      config: collectConfig()
+    }, window.location.origin);
   }
+
+  // The frame announces itself, because a config posted before it loads
+  // would be dropped with nothing to say so.
+  window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin) return;
+    if (!e.data || e.data.source !== 'idc-hci-preview-ready') return;
+    previewReady = true;
+    postPreview();
+  });
+
+  const renderPreview = postPreview;
+
+  // Fit the app's own width into whatever the column happens to be.
+  function scalePreview() {
+    const stage = document.querySelector('.q-preview-stage');
+    const frame = document.getElementById('q-preview-frame');
+    if (!stage || !frame) return;
+    // A stage measured before it has laid out reports zero, and scaling to
+    // zero hides the preview completely while looking like it simply has
+    // nothing to show. Wait for a real width rather than render invisibly.
+    const width = stage.clientWidth;
+    if (!width) { requestAnimationFrame(scalePreview); return; }
+    const scale = Math.min(1, width / 560);
+    frame.style.transform = `scale(${scale})`;
+    stage.style.height = `${660 * scale}px`;
+  }
+  window.addEventListener('resize', scalePreview);
 
   function addChoiceRow(value = '') {
     const row = document.createElement('div');

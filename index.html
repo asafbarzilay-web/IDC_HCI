@@ -717,8 +717,14 @@
   // actually exists; a hand-written task drifts the moment the flow changes.
   const AUTHOR_MODE = new URLSearchParams(location.search).get('authorMode') === '1';
 
-  // Both modes are observation, not participation — neither may write.
-  const TRACKING_OFF = PREVIEW_MODE || AUTHOR_MODE;
+  // Question preview: renders whatever question config the dashboard posts
+  // in, using the same code participants get. The builder used to draw its
+  // own copy of every question type, which meant "what participants see"
+  // was a promise maintained by hand — and it had already drifted once.
+  const QUESTION_PREVIEW = new URLSearchParams(location.search).get('previewQuestion') === '1';
+
+  // All three are observation, not participation — none may write.
+  const TRACKING_OFF = PREVIEW_MODE || AUTHOR_MODE || QUESTION_PREVIEW;
 
   function reportToAuthor(type, payload) {
     if (!AUTHOR_MODE || window.parent === window) return;
@@ -1657,7 +1663,7 @@
     ? FACE_RAMP[FACE_RAMP.length - 1]
     : FACE_RAMP[Math.round(i * (FACE_RAMP.length - 1) / (steps - 1))];
 
-  function renderQuestion(t) {
+  function renderQuestion(t, opts = {}) {
     const c = t.config || {};
     const host = document.getElementById('step-content');
     const desc = c.description ? `<p class="q-desc">${escapeHtml(c.description)}</p>` : '';
@@ -1676,6 +1682,14 @@
 
     const answer = t.kind === 'multiple_choice' ? wireChoices(c) : wireScale(c);
     const cont = document.getElementById('q-continue');
+
+    // A preview is interactive so you can see the selected state, but it
+    // must not advance anything: there is no battery behind it.
+    if (opts.preview) {
+      cont.disabled = false;
+      answer.onChange(() => {});
+      return;
+    }
 
     // Required means required: Continue stays dead until something is
     // chosen, rather than letting an empty answer through as if it were one.
@@ -1858,11 +1872,34 @@
     await stopTracking('participant used the stop control');
   });
 
+  // In question preview the dashboard drives what is shown; the selector
+  // never runs and no session is opened.
+  if (QUESTION_PREVIEW) {
+    document.getElementById('progress-rail').hidden = true;
+    document.getElementById('back-btn').style.display = 'none';
+    document.getElementById('step-content').innerHTML =
+      '<div class="q-block"><p class="q-desc">Your question will appear here.</p></div>';
+
+    window.addEventListener('message', (e) => {
+      // Same-origin only: the dashboard serves this frame.
+      if (e.origin !== window.location.origin) return;
+      const m = e.data;
+      if (!m || m.source !== 'idc-hci-preview') return;
+      renderQuestion({ kind: m.kind, goal_text: m.goal_text || '', config: m.config || {} },
+                     { preview: true });
+    });
+
+    // Tell the parent we are ready, so a config posted before load is not lost.
+    if (window.parent !== window) {
+      window.parent.postMessage({ source: 'idc-hci-preview-ready' }, window.location.origin);
+    }
+  }
+
   // Paint first, then start tracking — the selector must appear even if
   // analytics is unavailable.
-  render();
+  if (!QUESTION_PREVIEW) render();
 
-  (async () => {
+  if (!QUESTION_PREVIEW) (async () => {
     // The decision is resolved before the session row is written, so
     // gaze_state can be an insert rather than a later update — visitors
     // are allowed to append rows and nothing more.
