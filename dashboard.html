@@ -2316,7 +2316,7 @@
       .from('sessions')
       .select('session_id, user_id, platform, started_at,'
             + ' task_responses(task_id, kind, answer, duration_ms, created_at),'
-            + ' selections(step, value, created_at, task_id),'
+            + ' selections(step, value, duration_ms, created_at, task_id),'
             + ' clicks(step, x, y, seq, hit, task_id),'
             + ' gaze(step, x, y, t_ms, dur_ms, task_id)')
       .order('started_at', { ascending: false })
@@ -2550,6 +2550,65 @@
   const responsesFor = taskId =>
     taskCohort().flatMap(s => s.task_responses || []).filter(r => r.task_id === taskId);
 
+  // Per-step depth for one task, mirroring what Free style gives for the
+  // app as a whole. It matters more here: "people struggled" is not a
+  // finding, "people struggled on the letter step of this task" is.
+  function taskStepStats(taskId, step) {
+    const sessions = taskCohort();
+    const sel = s => (s.selections || []).filter(x => x.task_id === taskId && x.step === step);
+    const clk = s => (s.clicks || []).filter(x => x.task_id === taskId && x.step === step);
+
+    // Reached means they were on that screen at all — a click counts even
+    // if they never chose anything, which is precisely the drop-off case.
+    const reached = sessions.filter(s => sel(s).length || clk(s).length);
+    const passed = sessions.filter(s => sel(s).length);
+
+    const allClicks = reached.flatMap(clk);
+    const classified = allClicks.filter(c => c.hit != null);
+    const misRate = classified.length
+      ? Math.round((classified.filter(c => c.hit === 'none').length / classified.length) * 100) : null;
+
+    // Latest pick per step is the answer; every pick counts toward time,
+    // including ones they backed out of.
+    const time = stageStats(passed.map(s =>
+      sel(s).reduce((n, x) => n + (x.duration_ms || 0), 0)).filter(n => n > 0));
+    const clicks = stageStats(passed.map(s => clk(s).length));
+
+    const counts = {};
+    passed.forEach(s => {
+      const rows = sel(s).slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      const last = rows[rows.length - 1];
+      if (last) counts[last.value] = (counts[last.value] || 0) + 1;
+    });
+
+    return { reached: reached.length, passed: passed.length, misRate, time, clicks, counts };
+  }
+
+  function taskStepPanel(taskId, step) {
+    const d = taskStepStats(taskId, step);
+    if (!d.reached) {
+      return '<div class="empty-note">Nobody reached this screen during this task.</div>';
+    }
+    const dropped = d.reached - d.passed;
+    const total = Object.values(d.counts).reduce((n, v) => n + v, 0);
+    const choices = Object.entries(d.counts).sort((a, b) => b[1] - a[1]);
+
+    return `
+      <div class="stage-metrics">
+        ${metric('Reached', d.reached, 'saw this screen')}
+        ${metric('Passed', d.passed, d.reached ? `${Math.round((d.passed / d.reached) * 100)}% of those who reached it` : '')}
+        ${metric('Dropped off', dropped, d.reached ? `${Math.round((dropped / d.reached) * 100)}% left here` : '', dropped > 0)}
+        ${metric('Time on step', d.time ? fmtDuration(d.time.avg) : '—',
+                 d.time ? `median ${fmtDuration(d.time.median)}` : '')}
+        ${metric('Clicks to pass', d.clicks ? fmtClicks(d.clicks.avg) : '—',
+                 d.clicks ? `median ${fmtClicks(d.clicks.median)}` : '')}
+        ${metric('Mis-clicks', d.misRate == null ? '—' : `${d.misRate}%`,
+                 'of clicks on this step', d.misRate >= 50)}
+      </div>
+      ${choices.length ? `<div class="tr-layer-title">What they chose here</div>`
+        + choices.map(([v, n]) => trBar(v, n, total)).join('') : ''}`;
+  }
+
   let heatSeq = 0;   // unique ids for the per-task heatmap canvases
 
   function yesNoSummary(rows) {
@@ -2654,13 +2713,14 @@
       const id = `tr-heat-${++heatSeq}`;
       behaviour = `
         <div class="tr-behaviour" data-heat="${id}" data-task="${t.task_id}">
-          <h4>What they did during this task</h4>
+          <h4>Step by step, during this task</h4>
           <div class="tr-heat-tabs">
             ${STEPS.map((st, i) => `<button class="heatmap-tab${i === 0 ? ' active' : ''}" data-heat-step="${st}">${st}</button>`).join('')}
             <span style="flex:1"></span>
             <button class="heatmap-tab active" data-heat-layer="clicks">Clicks</button>
             <button class="heatmap-tab" data-heat-layer="gaze">Gaze</button>
           </div>
+          <div id="${id}-stats">${taskStepPanel(t.task_id, STEPS[0])}</div>
           <div class="tr-heat-wrap">
             <iframe id="${id}-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
             <canvas id="${id}-canvas"></canvas>
@@ -2808,10 +2868,19 @@
             && frame.contentDocument.readyState === 'complete'
             && frame.contentDocument.querySelector('.wrap')) draw();
       } catch { /* not same-origin yet; the load listener will cover it */ }
+      const stats = document.getElementById(`${id}-stats`);
+      const paintStats = () => {
+        if (stats) stats.innerHTML = taskStepPanel(taskId, currentStepOf(box));
+      };
+
       box.querySelector('.tr-heat-tabs').addEventListener('click', (e) => {
         const step = e.target.closest('[data-heat-step]');
         if (step) {
           box.querySelectorAll('[data-heat-step]').forEach(x => x.classList.toggle('active', x === step));
+          // The numbers describe the same screen as the heatmap, so they
+          // change together — a stale panel beside a fresh picture is worse
+          // than no panel at all.
+          paintStats();
           // Changing the screen reloads the preview, whose load redraws.
           frame.src = `index.html?previewStep=${step.dataset.heatStep}`;
           return;
