@@ -2711,14 +2711,21 @@
     let behaviour = '';
     if (kind === 'app_route' && rows.length && opts.withHeatmap !== false) {
       const id = `tr-heat-${++heatSeq}`;
+      // Only offer the layer toggle when there is something to toggle to.
+      // A Gaze button that can only ever say "nothing recorded" is a
+      // control that exists to disappoint.
+      const hasGaze = STEPS.some(st => taskGaze(t.task_id, st).length);
+      const layerToggle = hasGaze ? `
+            <span style="flex:1"></span>
+            <button class="heatmap-tab active" data-heat-layer="clicks">Clicks</button>
+            <button class="heatmap-tab" data-heat-layer="gaze">Gaze</button>` : '';
+
       behaviour = `
         <div class="tr-behaviour" data-heat="${id}" data-task="${t.task_id}">
           <h4>Step by step, during this task</h4>
           <div class="tr-heat-tabs">
             ${STEPS.map((st, i) => `<button class="heatmap-tab${i === 0 ? ' active' : ''}" data-heat-step="${st}">${st}</button>`).join('')}
-            <span style="flex:1"></span>
-            <button class="heatmap-tab active" data-heat-layer="clicks">Clicks</button>
-            <button class="heatmap-tab" data-heat-layer="gaze">Gaze</button>
+            ${layerToggle}
           </div>
           <div id="${id}-stats">${taskStepPanel(t.task_id, STEPS[0])}</div>
           <div class="tr-heat-wrap">
@@ -2899,6 +2906,8 @@
     return on ? on.dataset.heatStep : 'number';
   };
 
+  // Defaults to clicks: with no gaze for this task the toggle is not
+  // rendered at all, so there is no active layer button to read.
   const currentLayerOf = box => {
     const on = box.querySelector('[data-heat-layer].active');
     return on ? on.dataset.heatLayer : 'clicks';
