@@ -585,6 +585,7 @@
   .gaze-note[hidden] { display: none; }
   .gaze-note code {
     display: block;
+    white-space: pre-wrap;
     margin-top: 4px;
     font-size: 11px;
     color: #8A3D1E;
@@ -769,6 +770,7 @@
   // own copy of every question type, which meant "what participants see"
   // was a promise maintained by hand — and it had already drifted once.
   const QUESTION_PREVIEW = new URLSearchParams(location.search).get('previewQuestion') === '1';
+  const DEBUG_GAZE = new URLSearchParams(location.search).get('debug') === '1';
 
   // All three are observation, not participation — none may write.
   const TRACKING_OFF = PREVIEW_MODE || AUTHOR_MODE || QUESTION_PREVIEW;
@@ -1286,6 +1288,10 @@
     // Storing that would poison every average computed over the column.
     if (!isFinite(x) || !isFinite(y)) return;
 
+    // Kept for the debug readout: the mapped value alone cannot show
+    // whether the raw prediction was already in the wrong place.
+    if (DEBUG_GAZE) window.__lastGaze = { x: data.x, y: data.y, cx: x, cy: y };
+
     gazeRecent.push({ x, y });
     if (gazeRecent.length > SMOOTH_WINDOW) gazeRecent.shift();
     const sx = gazeRecent.reduce((n, p) => n + p.x, 0) / gazeRecent.length;
@@ -1545,6 +1551,11 @@
         Promise.resolve().then(() => webgazer.end()).catch(() => {});
         return 'calibrating';
       }
+      // In debug mode, show WebGazer's own prediction dot. Stored fixations
+      // cannot tell a mirrored axis from a bad calibration from plain noise
+      // — watching the raw estimate track your eyes separates all three.
+      if (DEBUG_GAZE) webgazer.showPredictionPoints(true);
+
       gazeOn = true;
       return 'tracking';
     } catch (err) {
@@ -2176,7 +2187,12 @@
         setInterval(() => {
           note.querySelector('code').textContent =
             `${samples} raw · ${sent} sent · ${gazeDropped} dropped · `
-            + `${gazeBuffer.length} queued · open: ${fixation ? fixation.n : 0}`;
+            + `${gazeBuffer.length} queued\n`
+            + (window.__lastGaze
+                ? `raw ${Math.round(window.__lastGaze.x)},${Math.round(window.__lastGaze.y)}`
+                  + ` of ${innerWidth}x${innerHeight} -> col `
+                  + `${window.__lastGaze.cx.toFixed(2)},${window.__lastGaze.cy.toFixed(2)}`
+                : 'no prediction yet');
         }, 500);
       }
 
