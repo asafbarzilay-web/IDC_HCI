@@ -2232,6 +2232,12 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
 
+  // Keeps its own multiselect across re-renders of the results body. The
+  // bar used to be rebuilt on every change, which destroyed the widget and
+  // restored it to "all" — so unchecking a session or pressing Clear
+  // appeared to do nothing at all.
+  const taskFilterWidgets = {};
+
   function wireTaskFilter(idPrefix, onChange) {
     if (taskFilter.from === null) taskFilter.from = defaultTaskFrom();
     const el = id => document.getElementById(`${idPrefix}-${id}`);
@@ -2248,15 +2254,15 @@
       onChange: () => {
         const opts = taskSessionOptions();
         const chosen = opts.filter(o => ms.has(o.value)).map(o => o.value);
+        // Null means "all", so a deliberate Clear has to stay empty rather
+        // than being read as no filter at all.
         taskFilter.sessions = chosen.length === opts.length ? null : new Set(chosen);
         onChange();
+        refreshCount();
       }
     });
+    taskFilterWidgets[idPrefix] = ms;
     ms.setOptions(taskSessionOptions());
-    if (taskFilter.sessions) {
-      // Re-entering the view must not silently widen a narrowed cohort.
-      taskSessionOptions().forEach(o => { if (!taskFilter.sessions.has(o.value)) ms.has(o.value); });
-    }
 
     const apply = async () => {
       taskFilter.from = el('from').value;
@@ -2266,7 +2272,11 @@
       // so a selection made against the old set no longer means anything.
       taskFilter.sessions = null;
       await loadTaskCohort();
+      // Repopulated in place: rebuilding the widget is what lost the
+      // selection in the first place.
+      ms.setOptions(taskSessionOptions());
       onChange();
+      refreshCount();
     };
     el('from').addEventListener('change', apply);
     el('to').addEventListener('change', apply);
@@ -2275,6 +2285,7 @@
     el('warmup').addEventListener('change', () => {
       taskFilter.warmup = el('warmup').value;
       onChange();
+      refreshCount();
     });
     el('clear').addEventListener('click', () => {
       taskFilter.from = defaultTaskFrom(); taskFilter.to = '';
@@ -2284,16 +2295,19 @@
       apply();
     });
 
-    const window_ = taskFilter.from || taskFilter.to
-      ? `${taskFilter.from || 'start'} to ${taskFilter.to || 'today'}` : 'all time';
-    const shown = taskCohort().length;
-    const narrowed = shown !== taskSessions.length ? ` of ${taskSessions.length}` : '';
-    const warm = taskSessions.filter(warmedUp).length;
-    // Stated even when not filtering: a mix of cold and warmed-up runs in
-    // one average is the ordering effect hiding in plain sight.
-    const split = taskFilter.warmup === 'all' && warm && warm !== taskSessions.length
-      ? ` · ${warm} warmed up, ${taskSessions.length - warm} cold` : '';
-    el('count').textContent = `${shown}${narrowed} sessions · ${window_}${split}`;
+    function refreshCount() {
+      const window_ = taskFilter.from || taskFilter.to
+        ? `${taskFilter.from || 'start'} to ${taskFilter.to || 'today'}` : 'all time';
+      const shown = taskCohort().length;
+      const narrowed = shown !== taskSessions.length ? ` of ${taskSessions.length}` : '';
+      const warm = taskSessions.filter(warmedUp).length;
+      // Stated even when not filtering: a mix of cold and warmed-up runs in
+      // one average is the ordering effect hiding in plain sight.
+      const split = taskFilter.warmup === 'all' && warm && warm !== taskSessions.length
+        ? ` · ${warm} warmed up, ${taskSessions.length - warm} cold` : '';
+      el('count').textContent = `${shown}${narrowed} sessions · ${window_}${split}`;
+    }
+    refreshCount();
   }
 
   async function loadTaskCohort() {
@@ -2850,6 +2864,16 @@
     const standing = taskStanding(t);
     const navTitle = x => x ? `${x.name} — ${taskStanding(x).label}` : '';
 
+    // Only the card is repainted on a filter change; the bar above it keeps
+    // its DOM, and with it the session widget's selection.
+    const paintBody = () => {
+      const rows = responsesFor(t.task_id);
+      const card = document.getElementById('results-card');
+      if (!card) return;
+      card.innerHTML = renderTaskResultBody(t, rows);
+      wireTaskHeatmaps(card);
+    };
+
     const paint = () => {
       const rows = responsesFor(t.task_id);
       host.innerHTML = `
@@ -2876,7 +2900,7 @@
           </div>
         </div>
         ${taskFilterMarkup('trf')}
-        <div class="tr-card">${renderTaskResultBody(t, rows)}</div>`;
+        <div class="tr-card" id="results-card">${renderTaskResultBody(t, rows)}</div>`;
 
       document.getElementById('results-pick')
         .addEventListener('change', (e) => openResults(e.target.value));
@@ -2890,7 +2914,7 @@
       // describes one study while its data came from another.
       document.getElementById('results-edit')
         .addEventListener('click', () => switchTo('tasks'));
-      wireTaskFilter('trf', paint);
+      wireTaskFilter('trf', paintBody);
       wireTaskHeatmaps(host);
     };
     paint();
@@ -2902,8 +2926,18 @@
     paintSummary();
   }
 
-  function paintSummary() {
-    const host = document.getElementById('summary-body');
+  // The filter bar is rendered once with the page; only the report below it
+  // is rebuilt, so the session widget survives a change to itself.
+  function paintSummaryBody() {
+    const body = document.getElementById('summary-report');
+    if (!body) { paintSummary(); return; }
+    body.innerHTML = summaryReportMarkup();
+    wireMiniHeatmaps(body);
+  }
+
+  // Everything below the filter bar. Split out so a filter change can
+  // rebuild the report without touching the bar that triggered it.
+  function summaryReportMarkup() {
     const sessions = taskSessions;
     const ordered = orderedTasks();
 
@@ -2926,8 +2960,7 @@
         renderTaskResultBody(t, rows, { withHeatmap: false, extra: behaviour })}</div>`;
     }).filter(Boolean).join('');
 
-    host.innerHTML = `
-      ${taskFilterMarkup('sf')}
+    return `
       <div class="summary-head">
         <h1>Selector Flow — study summary</h1>
         <div class="summary-sub">
@@ -2954,8 +2987,13 @@
         <h3>Task by task</h3>
         ${blocks || '<div class="empty-note">No task answers in this view yet.</div>'}
       </div>`;
+  }
 
-    wireTaskFilter('sf', paintSummary);
+  function paintSummary() {
+    const host = document.getElementById('summary-body');
+    host.innerHTML = taskFilterMarkup('sf')
+      + `<div id="summary-report">${summaryReportMarkup()}</div>`;
+    wireTaskFilter('sf', paintSummaryBody);
     wireMiniHeatmaps(host);
   }
 

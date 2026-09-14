@@ -1792,6 +1792,19 @@
       if (!btn) return;
       // Typing in the 'other' field should not toggle the row off again.
       if (e.target.classList.contains('other-text')) { btn.classList.add('on'); cb(true); return; }
+
+      // "None of these apply" contradicts every other answer, so the two
+      // cannot both stand. Picking either one clears the other.
+      const optOut = host.querySelector('[data-optout]');
+      if (btn.dataset.optout) {
+        const turningOn = !btn.classList.contains('on');
+        host.querySelectorAll('.q-option').forEach(b => b.classList.remove('on'));
+        btn.classList.toggle('on', turningOn);
+        cb(!!host.querySelector('.q-option.on'));
+        return;
+      }
+      if (optOut) optOut.classList.remove('on');
+
       if (multi) btn.classList.toggle('on');
       else host.querySelectorAll('.q-option').forEach(b => b.classList.toggle('on', b === btn));
       if (btn.dataset.other) btn.querySelector('.other-text').focus();
