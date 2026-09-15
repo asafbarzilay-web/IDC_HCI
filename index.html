@@ -1550,6 +1550,13 @@
         .showPredictionPoints(false)
         .begin();
 
+      // WebGazer trains on every click anywhere on the page. The framing
+      // button and anything else before calibration are clicks the
+      // participant was not necessarily looking at, and in a 50-slot buffer
+      // each one costs a slot that a calibration dot should have had.
+      // Training is switched on only for the dots themselves.
+      try { webgazer.removeMouseEventListeners(); } catch {}
+
       webgazer.showVideoPreview(true).showFaceOverlay(true).showFaceFeedbackBox(true);
 
       if (!await confirmFraming()) {
@@ -1564,6 +1571,8 @@
       // complete. And it is a moving image, so it pulls gaze towards
       // itself at the one moment gaze has to be on a known point.
       webgazer.showVideoPreview(false).showFaceOverlay(false).showFaceFeedbackBox(false);
+
+      try { webgazer.addMouseEventListeners(); } catch {}
 
       if (!await runCalibration()) {
         // Same teardown as the stop control: the promise said the camera
@@ -1586,8 +1595,17 @@
       // click, unlike a calibration dot they were told to stare at.
       //
       // Detaching the listeners freezes the fit on the 45 good samples.
-      try { webgazer.removeMouseEventListeners(); }
-      catch (err) { console.warn('could not stop click training', err); }
+      try {
+        webgazer.removeMouseEventListeners();
+        // Recorded so the debug readout can say whether the set stayed put.
+        // A count that grows after this means the detach did not take; one
+        // that holds while accuracy falls away means drift, and those have
+        // opposite answers.
+        window.__frozenAt = trainingSamples();
+      } catch (err) {
+        window.__frozenAt = 'detach failed';
+        console.warn('could not stop click training', err);
+      }
 
       if (DEBUG_GAZE) webgazer.showPredictionPoints(true);
 
@@ -2241,7 +2259,8 @@
                   + ` of ${innerWidth}x${innerHeight} -> col `
                   + `${window.__lastGaze.cx.toFixed(2)},${window.__lastGaze.cy.toFixed(2)}`
                 : 'no prediction yet')
-            + `\ntrained on ${trainingSamples()} samples`;
+            + `\ntrained on ${trainingSamples()}`
+            + (window.__frozenAt != null ? ` · frozen at ${window.__frozenAt}` : '');
         }, 500);
       }
 
