@@ -1453,10 +1453,12 @@
         </div>
 
         <p class="gaze-caveat">
-          Webcam gaze is accurate to a region, not a button — expect it to be
-          off by roughly a finger's width at arm's length, and further for
-          anyone who moved or wore glasses. Read it for what people scanned
-          and in what order, not for which single option they fixated on.
+          <b>Demonstrative only.</b> Measured on this setup, the estimate wanders
+          further than the gap between two option cards, so a blob sitting on a
+          card is not evidence that anyone looked at it. Laptop webcams without
+          head stabilisation cannot resolve targets this close together. Read
+          this as proof the pipeline works end to end — consent, calibration,
+          capture, clustering, attribution — not as a finding about attention.
         </p>
       </div>
       </details>
@@ -2785,7 +2787,7 @@
           : 'No clicks recorded for this screen during this task.';
       } else if (layer === 'gaze') {
         const dwell = points.reduce((n, p) => n + (p.dur_ms || 0), 0);
-        legend.textContent = `${points.length} fixations · ${fmtDuration(dwell)} of looking · estimate, accurate to a region`;
+        legend.textContent = `${points.length} fixations · ${fmtDuration(dwell)} of looking · demonstrative only, not accurate to an option`;
       } else {
         const miss = points.filter(p => p.hit === 'none').length;
         legend.textContent = `${points.length} clicks · ${miss} landed on nothing`;
@@ -2841,7 +2843,7 @@
     }).join('');
     return `
       <div class="tr-layer-title">${layer === 'gaze'
-        ? 'Where they looked — estimate, accurate to a region' : 'Where they clicked'}</div>
+        ? 'Where they looked — demonstrative only, not accurate to an option' : 'Where they clicked'}</div>
       <div class="tr-mini-row">${cells}</div>`;
   }
 
