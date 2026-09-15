@@ -683,7 +683,7 @@
     <ul class="gaze-points">
       <li>The video never leaves your computer. Nothing is recorded or uploaded.</li>
       <li>Only an estimate of where on the page you were looking is saved.</li>
-      <li>There is a short setup step first: click five dots, three times each.</li>
+      <li>There is a setup step first: click nine dots, five times each. It takes about a minute.</li>
     </ul>
     <div class="gaze-actions">
       <button class="gaze-btn primary" id="gaze-allow">Use my camera</button>
@@ -719,7 +719,8 @@
   <div class="gaze-card">
     <h1>Can you see yourself?</h1>
     <p>Your camera preview is in the top-left corner. Sit so your whole face fits inside the box, at a comfortable distance from the screen.</p>
-    <p>From here on, try to keep your head still — that is what keeps the estimate accurate.</p>
+    <p>Good, even light on your face helps a lot. Avoid a bright window behind you.</p>
+    <p>From here on, keep your head as still as you can — head movement after calibration is the main reason the estimate drifts.</p>
     <div class="gaze-actions">
       <button class="gaze-btn primary" id="frame-ready">I'm in frame</button>
       <button class="gaze-btn ghost" id="frame-cancel">Continue without eye tracking</button>
@@ -730,7 +731,8 @@
 <div class="gaze-overlay calib-overlay" id="gaze-calib" hidden>
   <div class="calib-hint" id="calib-hint">
     <strong>Look at each dot and click it</strong>
-    <span>Three clicks per dot, five dots. Keep your head still and look right at the dot as you click.</span>
+    <span>Five clicks per dot, nine dots. Look straight at each dot as you click it,
+    and keep your head still from here until the end — moving is what makes the estimate drift.</span>
   </div>
   <!-- Progress is shown rather than implied. A dot that cannot be reached
        would otherwise stall the whole step with nothing on screen to say
@@ -1170,18 +1172,21 @@
   // Row count is no longer the binding constraint; coverage is.
   const FIXATION_MIN_MS = 100;
 
-  const CALIB_CLICKS = 3;
+  // Five clicks a dot, nine dots: 45 training samples rather than 15.
+  // Fifteen produced a prediction that wandered regardless of where the
+  // participant looked — the model was training, just on far too little.
+  // This is what the method needs; it is still not button-accurate.
+  const CALIB_CLICKS = 5;
   // Which entry in CALIB_POINTS sits at screen centre, under the hint text.
-  const CENTRE_POINT = 2;
-  // Four corners plus centre: 15 clicks instead of 27. The nine-point grid
-  // is the textbook one, but it costs each participant the better part of
-  // a minute before the study even starts, and the accuracy it buys back
-  // is mostly at the screen edges — which in this layout is margin. The
-  // option cards sit in the middle, where five points cover well.
+  const CENTRE_POINT = 4;
+  // Back to the nine-point grid. Five points covered the middle of the
+  // screen adequately in theory, but with three clicks each the regression
+  // had too few samples to fit at all, and edge coverage turned out to
+  // matter for stabilising the fit rather than only for edge accuracy.
   const CALIB_POINTS = [
-    [12, 14], [88, 14],
-    [50, 50],
-    [12, 86], [88, 86]
+    [12, 14], [50, 14], [88, 14],
+    [12, 50], [50, 50], [88, 50],
+    [12, 86], [50, 86], [88, 86]
   ];
 
   // True while consent or calibration owns the screen. The click logger
