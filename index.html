@@ -1540,6 +1540,10 @@
 
       // begin() opens the camera, which is where a browser-level denial
       // surfaces. Treat that the same as clicking "continue without it".
+      // Never reuse another session's training data: it was fitted to a
+      // different face, at a different distance, in different light.
+      webgazer.params.saveDataAcrossSessions = false;
+
       await webgazer
         .setRegression('ridge')
         .setGazeListener(onGazeSample)
@@ -1571,6 +1575,20 @@
       // In debug mode, show WebGazer's own prediction dot. Stored fixations
       // cannot tell a mirrored axis from a bad calibration from plain noise
       // — watching the raw estimate track your eyes separates all three.
+      // Stop training the moment calibration ends.
+      //
+      // WebGazer keeps its click-training data in a ring buffer of 50
+      // (DataWindow in InitRegression). With 45 calibration samples in it,
+      // the participant's first few study clicks start overwriting the
+      // dots they carefully looked at — so the model drifts away from the
+      // calibration precisely as the study proceeds. Worse, a study click
+      // is a poor training sample: they may be looking anywhere when they
+      // click, unlike a calibration dot they were told to stare at.
+      //
+      // Detaching the listeners freezes the fit on the 45 good samples.
+      try { webgazer.removeMouseEventListeners(); }
+      catch (err) { console.warn('could not stop click training', err); }
+
       if (DEBUG_GAZE) webgazer.showPredictionPoints(true);
 
       // How many training samples the regression actually holds. A dot that
