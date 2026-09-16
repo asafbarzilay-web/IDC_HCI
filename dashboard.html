@@ -1611,16 +1611,41 @@
     photo: {
       label: 'photo',
       file: 'photo.html',
-      // Filled in when photo.html lands. Empty is the honest placeholder:
-      // the panels that read it render "No data yet" rather than inventing
-      // a screen list, and there are no photo sessions to read yet anyway.
-      steps: [],
-      screens: [],
+      // Must match SCREENS in photo.html. The database no longer
+      // constrains `step`, so these two lists agree here or nowhere.
+      steps: ['logged_out', 'login', 'register_1', 'register_2',
+              'discover', 'search', 'search_results', 'chats', 'chat', 'profile'],
+      screens: [
+        ['logged_out',     'Logged out'],
+        ['login',          'Log in'],
+        ['register_1',     'Register 1'],
+        ['register_2',     'Register 2'],
+        ['discover',       'Discover'],
+        ['search',         'Search'],
+        ['search_results', 'Results'],
+        ['chats',          'Chats'],
+        ['chat',           'Conversation'],
+        ['profile',        'Profile']
+      ],
+      // Unlike the selector, this app's choices are not drawn from a fixed
+      // set: a selection names whichever photograph or person was tapped.
+      // Left empty rather than filled with a guess at every photo id --
+      // the panels that read it fall back to the values actually recorded.
       options: {}
     }
   };
 
   const appFile = () => APPS[currentApp].file;
+
+  // How a screen id is written for a reader. Capitalising the id worked
+  // while ids were single words -- it turns 'logged_out' into 'Logged_out'
+  // and 'search_results' into 'Search_results'. The manifest carries the
+  // real label, and this is the one place that reads it, so a screen
+  // renamed there is renamed everywhere.
+  const screenLabel = (id) => {
+    const found = (APPS[currentApp].screens || []).find(([k]) => k === id);
+    return found ? found[1] : String(id).charAt(0).toUpperCase() + String(id).slice(1);
+  };
 
   // Remembered across reloads. Coming back to the dashboard and finding it
   // silently switched studies would make every number on screen wrong in a
@@ -1737,7 +1762,15 @@
         clicks: stageStats(clickCounts),
         misRate: misclickRate(stepClicks),
         choices,
+        // A fixed option list, where the app has one: it keeps a choice
+        // nobody made visible as a zero instead of omitting it, which is
+        // often the finding. Where the app's choices are open-ended --
+        // photo's, where a selection names whichever photograph was
+        // tapped -- fall back to the values actually recorded, commonest
+        // first. Without the fallback this was undefined and every By
+        // stage panel threw before drawing anything.
         options: STEP_OPTIONS[step]
+                 || Object.keys(choices).sort((a, b) => choices[b] - choices[a])
       };
     });
 
@@ -1810,7 +1843,7 @@
     document.querySelectorAll('.heatmap-tab').forEach(btn => {
       const step = btn.dataset.step;
       const d = stageData[step];
-      const name = step.charAt(0).toUpperCase() + step.slice(1);
+      const name = screenLabel(step);
       const m = d && !d.terminal && d.time ? `<span class="tab-metric">${fmtDuration(d.time.avg)}</span>` : '';
       btn.innerHTML = name + m;
     });

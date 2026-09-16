@@ -233,6 +233,17 @@ window.Study = (function () {
     resetClickSeq();
 
     if (!TRACKING_OFF) installClickLogger();
+
+    // A participating app with no client records nothing, and does it
+    // silently: write() checks for the client and returns quietly, so the
+    // app looks perfectly healthy while the dashboard stays empty. That
+    // is a worse failure than a crash, because nothing points at it until
+    // a study has already been run. Say so loudly instead.
+    if (!TRACKING_OFF && !window.supabaseClient) {
+      console.error(
+        `Study: app '${cfg.app}' is configured to record, but no supabaseClient exists. ` +
+        'Nothing will be written. Create the client before study-core.js runs.');
+    }
     return api;
   }
 

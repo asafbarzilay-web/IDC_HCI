@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>photo</title>
+
+<!--
+  The photo app: the second participant-facing study in this repo, built
+  from the Figma prototype at lr2Y8jOrb9BWe5tQC8CmUS.
+
+  Why this is real HTML rather than an embedded Figma prototype: a
+  prototype is an opaque iframe. Nothing inside it can be measured, so
+  there would be no clicks, no route scoring and an empty dashboard —
+  which is the entire point of the exercise.
+
+  Geometry is taken from the Figma file rather than estimated: a 375x812
+  frame, a 343-wide content column with 16px margins, 52px buttons, a
+  44px status bar and an 83px tab bar. Those numbers appear as constants
+  in the CSS below and are the reason the screens line up with the
+  dashboard's previews.
+
+  Instrumentation lives in study-core.js, shared with index.html.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&family=Roboto:wght@400;700;900&display=swap" rel="stylesheet">
+
+<style>
+  /* ------------------------------------------------------------------
+     The phone frame.
+
+     Fixed at 375x812 on every device rather than made responsive. Click
+     coordinates then mean the same absolute thing for every participant,
+     which is what makes the heatmaps comparable without normalising
+     against a column whose width varies — the fiddly part of the shapes
+     app's analysis.
+     ------------------------------------------------------------------ */
+  :root {
+    --w: 375px;          /* phone width, from the Figma frame */
+    --h: 812px;          /* phone height */
+    --pad: 16px;         /* page margin; content column is 343px */
+    --status: 44px;
+    --navbar: 88px;
+    --tabbar: 83px;
+    --btn: 52px;
+    --ink: #000;
+    --dim: rgba(0,0,0,0.8);
+    --line: #E5E5E5;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  /* `display: flex` on an element outranks the [hidden] attribute's own
+     `display: none`, so a hidden flex element keeps its box and keeps
+     taking space in the layout. That silently pushed the screen 127px
+     down here — the same trap the gaze overlays fell into. */
+  [hidden] { display: none !important; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #1C1B19;
+    font-family: Roboto, -apple-system, system-ui, sans-serif;
+  }
+
+  .stage {
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 0;
+  }
+
+  /* The measured box. Study.configure() points at this, so every click
+     coordinate is relative to the phone screen and nothing else. */
+  /* On the splash the status bar floats over the artwork instead of
+     sitting above it, so the screen gets the full 812px. */
+  .phone.bleed .status { position: absolute; top: 0; left: 0; right: 0; z-index: 5; }
+
+  .phone {
+    position: relative;
+    width: var(--w);
+    height: var(--h);
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* On a real phone the frame fills the display and the decorative
+     shadow is pointless. The 375px width is kept either way — a
+     participant on a 390px phone sees the same layout as one on a
+     laptop, which is the whole reason for a fixed frame. */
+  @media (max-width: 420px) {
+    .stage { padding: 0; align-items: flex-start; }
+    .phone { box-shadow: none; height: 100vh; height: 100dvh; }
+  }
+
+  /* --- status bar --------------------------------------------------- */
+  .status {
+    flex: 0 0 var(--status);
+    height: var(--status);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 21px 0 21px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.33px;
+    color: #000;
+  }
+  .status .conn { display: flex; align-items: center; gap: 5px; }
+  .status img { display: block; }
+
+  /* --- the screen itself -------------------------------------------- */
+  /* Scrolls internally. Discover is 2267px of content in an 812px frame,
+     so this is the element that moves, not the page. */
+  .screen {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .screen::-webkit-scrollbar { display: none; }
+
+  .pad { padding: 0 var(--pad); }
+
+  /* --- type --------------------------------------------------------- */
+  h1.title {
+    font-family: Comfortaa, Georgia, serif;
+    font-weight: 400;
+    font-size: 34px;
+    line-height: 40px;
+    letter-spacing: -0.5px;
+    margin: 32px 0 0;      /* heading baseline lands at y=76 */
+  }
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 15px;
+    margin: 32px 0 24px;
+  }
+
+  /* --- controls ----------------------------------------------------- */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: var(--btn);
+    border-radius: 6px;
+    font-family: Roboto, sans-serif;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 0.52px;
+    text-transform: lowercase;
+    font-variant: small-caps;
+    cursor: pointer;
+    border: 2px solid var(--ink);
+    background: #fff;
+    color: var(--ink);
+  }
+  /* The design sets these in caps with 0.52px tracking. Written as real
+     uppercase text rather than a transform so the label in the DOM is the
+     label a screen reader reads. */
+  .btn { text-transform: uppercase; font-variant: normal; }
+  .btn.solid { background: var(--ink); color: #fff; }
+  .btn + .btn { margin-top: 16px; }
+
+  .field {
+    width: 100%;
+    height: var(--btn);
+    border: 1px solid var(--ink);
+    border-radius: 2px;
+    padding: 0 14px;
+    font-family: Roboto, sans-serif;
+    font-size: 13px;
+    color: var(--ink);
+    background: #fff;
+  }
+  .field::placeholder { color: #9A9A9A; }
+  .field + .field { margin-top: 16px; }
+
+  .back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin: 4px 0 0 -8px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--ink);
+  }
+
+  /* --- Discover ----------------------------------------------------- */
+  /* Horizontal rail. The Figma frame is 1436px wide for this reason: the
+     carousel runs off the right edge of the phone and is scrolled to. */
+  .rail {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding: 0 var(--pad);
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail-card { flex: 0 0 343px; scroll-snap-align: start; cursor: pointer; }
+  .rail-card img.shot { width: 343px; height: 343px; object-fit: cover; display: block; }
+
+  .credit { display: flex; align-items: center; gap: 8px; height: 28px; margin-top: 16px; }
+  .credit img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+  .credit b { font-size: 13px; font-weight: 700; line-height: 15px; display: block; }
+  .credit span { font-size: 11px; color: var(--dim); line-height: 13px; display: block; }
+
+  /* Two staggered columns, 167px each with a 9px gutter — 343 total.
+     Tile heights alternate 220 and 310 exactly as the design does. */
+  .masonry { display: flex; gap: 9px; }
+  .masonry .col { display: flex; flex-direction: column; gap: 10px; width: 167px; }
+  .masonry img { width: 167px; display: block; object-fit: cover; cursor: pointer; }
+  .masonry img.s { height: 220px; }
+  .masonry img.t { height: 310px; }
+
+  /* --- search results grid ------------------------------------------ */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 107px); gap: 11px; }
+  .grid3 img { width: 107px; height: 107px; object-fit: cover; display: block; cursor: pointer; }
+
+  /* --- chats -------------------------------------------------------- */
+  .navbar {
+    flex: 0 0 auto;
+    height: 44px;                       /* the 88px bar is 44 status + 44 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    font-size: 17px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--line);
+  }
+  .navbar .back { position: absolute; left: 8px; margin: 0; }
+
+  .chat-row {
+    display: flex;
+    gap: 16px;
+    height: 100px;
+    padding: 17px var(--pad) 0;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .chat-row img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex: 0 0 64px; }
+  .chat-row .who { font-size: 15px; font-weight: 700; line-height: 18px; }
+  .chat-row .msg {
+    font-size: 14px; line-height: 18px; color: var(--dim); margin-top: 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+
+  /* --- one conversation --------------------------------------------- */
+  .thread { padding: 32px 0 24px; }
+  .bubble-row { display: flex; align-items: flex-start; gap: 16px; padding: 0 var(--pad); margin-bottom: 24px; }
+  .bubble-row.out { flex-direction: row-reverse; }
+  .bubble-row img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: 0 0 28px; margin-top: 2px; }
+  .bubble {
+    width: 299px;
+    background: #F4F4F4;
+    padding: 16px;
+    font-size: 14px;
+    line-height: 18px;
+  }
+
+  /* --- profile ------------------------------------------------------ */
+  .avatar-xl { width: 128px; height: 128px; border-radius: 50%; object-fit: cover; display: block; margin: 32px auto 0; }
+  .profile-name {
+    font-family: Comfortaa, Georgia, serif; font-size: 34px; line-height: 40px;
+    text-align: center; margin: 32px 0 0; font-weight: 400;
+  }
+  .profile-where {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    text-align: center; line-height: 15px; margin: 16px 0 0;
+  }
+
+  /* --- tab bar ------------------------------------------------------ */
+  .tabbar {
+    flex: 0 0 var(--tabbar);
+    height: var(--tabbar);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    border-top: 1px solid var(--line);
+    background: #fff;
+    padding-bottom: 20px;               /* the home indicator's strip */
+    position: relative;
+  }
+  .tab { border: 0; background: none; cursor: pointer; padding: 6px 10px; display: flex; align-items: center; }
+  .tab img { display: block; width: 22px; height: 22px; object-fit: contain; }
+  .tab.compose img { width: 56px; height: 32px; }
+  /* Inactive tabs dim; the compose button never does. It is an action,
+     not a destination, so it has no screen to be current on — and the
+     generic rule was fading its gradient to 55% on every screen. */
+  .tab:not([aria-current="true"]):not(.compose) img { opacity: 0.55; }
+
+  .home-ind {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: 8px; width: 134px; height: 5px; border-radius: 10px; background: #000;
+  }
+
+  /* --- keyboard ------------------------------------------------------ */
+  /* 375x291 in the design. Drawn rather than shipped as an image so it
+     stays crisp and so the keys are real targets a participant can miss —
+     a mis-tap on a keyboard is a finding, and a flat picture cannot
+     record one. */
+  .keyboard {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 291px; background: #D1D5DB; padding: 8px 3px 0;
+    display: flex; flex-direction: column; gap: 11px;
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  .kb-row { display: flex; justify-content: center; gap: 6px; }
+  .kb-key {
+    min-width: 32px; height: 42px; border-radius: 5px; background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; box-shadow: 0 1px 0 rgba(0,0,0,0.3); cursor: pointer;
+  }
+  .kb-key.wide { min-width: 42px; background: #ADB3BC; }
+  .kb-key.space { flex: 1 1 auto; font-size: 14px; }
+  .kb-key.act { min-width: 88px; font-size: 14px; background: #ADB3BC; }
+
+  /* --- overlays ------------------------------------------------------ */
+  /* An overlay is a layer on a screen, not a screen. It covers the frame
+     but the screen underneath keeps its identity, and clicks made here
+     carry both — see `overlay` in the clicks table. */
+  .overlay {
+    position: absolute; inset: 0; z-index: 20; background: #fff;
+    display: flex; flex-direction: column;
+  }
+  .overlay[hidden] { display: none; }
+  .photo-full { flex: 1 1 auto; width: 100%; object-fit: cover; }
+  .overlay-bar {
+    position: absolute; top: 44px; left: 0; right: 0; height: 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px 0 16px;
+  }
+  .overlay-bar .credit { margin: 0; }
+  .overlay-bar .credit b, .overlay-bar .credit span { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+  .close-x {
+    width: 32px; height: 32px; border: 0; background: none; cursor: pointer;
+    font-size: 26px; line-height: 1; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+
+  /* --- logged out ----------------------------------------------------- */
+  .splash { position: relative; height: 100%; }
+  .splash > img.bg { position: absolute; inset: 0; width: 100%; height: 707px; object-fit: cover; }
+  .wordmark {
+    position: absolute; left: 84px; top: 312px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .wordmark .glyph { position: relative; width: 38px; height: 38px; }
+  .wordmark .glyph img { position: absolute; inset: 0; width: 38px; height: 38px; }
+  .wordmark .glyph img.flip { transform: rotate(180deg); }
+  .wordmark span {
+    font-family: Comfortaa, Georgia, serif; font-size: 48px; line-height: 1;
+    letter-spacing: -0.72px; color: #000;
+  }
+  /* margin-top comes from the shared .credit rule, where it separates a
+     photo from its caption. Absolutely placed here, it would add itself
+     to the measured top. */
+  .splash .credit { position: absolute; left: 16px; top: 659px; margin-top: 0; }
+  .splash .actions { position: absolute; left: 16px; top: 727px; display: flex; gap: 9px; }
+  .splash .actions .btn { width: 167px; margin: 0; }
+
+  .legal { font-size: 11px; line-height: 18px; color: var(--dim); margin-top: 32px; }
+  .legal a { color: var(--ink); }
+
+  /* --- task prompt ----------------------------------------------------- */
+  /* Sits above the phone rather than inside it: a banner drawn over the
+     app would cover the screen being measured and its clicks would land
+     in the heatmap of whatever it was covering. */
+  .prompt {
+    width: var(--w); margin: 0 auto 14px; color: #F2EFE6;
+    font-family: Roboto, sans-serif;
+  }
+  .prompt .step { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.65; }
+  .prompt .goal { font-size: 15px; line-height: 21px; margin-top: 6px; }
+  .prompt .give-up {
+    margin-top: 10px; background: none; border: 0; color: #C9A227;
+    font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0;
+  }
+  .prompt .retry { margin-top: 8px; font-size: 13px; color: #E88B6A; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div>
+    <div class="prompt" id="prompt" hidden></div>
+
+    <!-- The measured box. Everything a participant can touch is inside it. -->
+    <div class="phone" id="phone">
+      <div class="status">
+        <span id="clock">9:27</span>
+        <span class="conn">
+          <img src="photo-assets/icon/i06.svg" width="18" height="12" alt="">
+          <img src="photo-assets/icon/i04.svg" width="16" height="12" alt="">
+          <img src="photo-assets/icon/i07.svg" width="25" height="12" alt="">
+        </span>
+      </div>
+
+      <div class="navbar" id="navbar" hidden></div>
+      <div class="screen" id="screen"></div>
+      <nav class="tabbar" id="tabbar" hidden></nav>
+      <div class="home-ind"></div>
+
+      <div class="overlay" id="overlay" hidden></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script>
+  // Isolated client: never loads or stores an auth session, so inserts are
+  // always made as the anonymous role. Without this, logging into the
+  // dashboard on this same origin would attach that auth session to the
+  // app's inserts too — and the RLS insert policy (anon only) would
+  // silently reject every row from that browser.
+  //
+  // Analytics must never be able to break the app: if the library did not
+  // load, this stays null and the app still runs, just untracked.
+  //
+  // Must come BEFORE study-core.js is asked to write anything. Omitting it
+  // does not raise: Study.write() checks for the client and returns
+  // quietly, so the app looks perfectly healthy while recording nothing.
+  var supabaseClient = null;
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+  } catch (err) {
+    console.warn('Analytics disabled — could not initialise Supabase:', err);
+  }
+</script>
+<script src="study-core.js"></script>
+<script>
+  // =====================================================================
+  // Content
+  //
+  // The photographs are the app. A participant asked to "find the dog in
+  // the yellow kayak" is searching this list, so the assignment of image
+  // to slot is study material, not decoration.
+  // =====================================================================
+  const IMG = f => `photo-assets/img/${f}.jpg`;
+
+  const FEATURED = [
+    { id: 'lattice',  src: 'p02', who: 'Ridhwan Nordin',  at: '@ridxjcob',  face: 'p10' },
+    { id: 'beetle',   src: 'p04', who: 'Clem Onojeghuo',  at: '@clemono2',  face: 'p13' },
+    { id: 'bicycles', src: 'p17', who: 'Jon Tyson',       at: '@jontyson',  face: 'p14' },
+    { id: 'skyline',  src: 'p09', who: 'Simon Zhu',       at: '@emrohs',    face: 'p10' }
+  ];
+
+  // Two staggered columns. `t` is a 310px tile, `s` a 220px one — the
+  // alternation is what makes the grid stagger, so it is data, not style.
+  const BROWSE = {
+    left:  [['p01','s'], ['p08','t'], ['p18','s'], ['p20','t'], ['p15','t']],
+    right: [['p03','t'], ['p16','t'], ['p11','s'], ['p12','t'], ['p06','s']]
+  };
+
+  const RESULTS = ['d01','d02','d03','d04','d05','d06','d07','d08',
+                   'd09','d10','d11','d12','d13','d14','d15'];
+
+  const CHATS = [
+    { id: 'james', who: 'James',         face: 'c03', last: 'Thank you! That was very helpful!' },
+    { id: 'will',  who: 'Will Kenny',    face: 'c01', last: "I know… I'm trying to get the funds." },
+    { id: 'beth',  who: 'Beth Williams', face: 'c02', last: "I'm looking for tips around capturing the milky way. I have a 6D with a 24-100mm…" },
+    { id: 'shawn', who: 'Rev Shawn',     face: 'c06', last: "Wanted to ask if you're available for a portrait shoot next week." }
+  ];
+
+  const THREAD = [
+    { from: 'them', text: "Really love your most recent photo. I've been trying to capture the same thing for a few months and would love some tips!" },
+    { from: 'me',   text: "A fast 50mm like f1.8 would help with the bokeh. I've been using primes as they tend to get a bit sharper images." },
+    { from: 'them', text: 'Thank you! That was very helpful!' }
+  ];
+
+  const PROFILE_GRID = {
+    left:  [['j03','s'], ['j12','t'], ['j05','t']],
+    right: [['j07','t'], ['j11','t'], ['j13','s']]
+  };
+
+  // =====================================================================
+  // Screens
+  //
+  // Every id here is written to `clicks.step` and `gaze.step`, and the
+  // dashboard's APPS manifest must list the same ones. This array is the
+  // single place the screen list exists — the database no longer
+  // constrains it.
+  // =====================================================================
+  const SCREENS = ['logged_out', 'login', 'register_1', 'register_2',
+                   'discover', 'search', 'search_results',
+                   'chats', 'chat', 'profile'];
+
+  // Overlays are not screens. They are recorded alongside the screen they
+  // cover, so a tap on an opened photo is not painted onto the grid below.
+  const OVERLAYS = ['photo_open', 'keyboard'];
+
+  const TABS = [
+    { screen: 'discover', icon: 'i09', label: 'Home' },
+    { screen: 'search',   icon: 'i01', label: 'Search' },
+    { screen: null,       icon: 'i02', label: 'New post', compose: true },
+    { screen: 'chats',    icon: 'i03', label: 'Chats' },
+    { screen: 'profile',  icon: null,  label: 'Profile' }
+  ];
+
+  // Which screens carry the tab bar. The auth flow deliberately does not:
+  // a participant who has not signed in cannot reach the app by tapping
+  // past it, which is what makes "register an account" a real task.
+  const TABBED = new Set(['discover', 'search', 'search_results', 'chats', 'chat', 'profile']);
+
+  // The splash is the one screen whose artwork runs behind the status bar.
+  const BLEED = new Set(['logged_out']);
+
+  let screen = 'logged_out';
+  let overlay = null;          // 'photo_open' | 'keyboard' | null
+  let openPhoto = null;        // which photo the overlay is showing
+  let chatWith = null;
+  let searchText = '';
+  let stepEnteredAt = Date.now();
+
+  const esc = s => String(s).replace(/[&<>"']/g,
+    c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  // =====================================================================
+  // Tell the shared core what this app is.
+  //
+  // Called before anything reads a flag back out of it: PREVIEW_MODE and
+  // TRACKING_OFF are plain values captured once. The hooks themselves
+  // resolve at call time and may name things declared further down.
+  // =====================================================================
+  Study.configure({
+    app: 'photo',
+    screens: SCREENS,
+    content: () => document.getElementById('phone'),
+    currentStep: () => screen,
+    currentOverlay: () => overlay,
+    // KNOWN LIMIT, stated rather than hidden: coordinates are relative to
+    // the 375x812 frame, so on the screens taller than it — Discover at
+    // 2267px, Profile at 1549, Results at 1049 — the same photograph
+    // records a different y depending on how far the participant had
+    // scrolled. Which screen, which route and which target were hit are
+    // all still exact; only the heatmap's vertical position is
+    // viewport-relative rather than page-relative.
+    //
+    // The fix is a scroll offset stored per click, which is one nullable
+    // column. Doing it by normalising against the scrolling element
+    // instead would be worse than the problem: the tab bar and status bar
+    // do not scroll, so their clicks would move around under a fixed
+    // finger.
+    onAppScreen: () => !inQuestion(),
+    overlayActive: () => false,
+    // 'none' is the mis-click bucket, so everything a participant can
+    // deliberately aim at has to be named here. Dismissing an overlay and
+    // tapping a text field are both real targets: left unnamed they were
+    // scoring as mis-clicks, which would have reported this app as much
+    // harder to hit than it is. The vocabulary is fixed by the clicks
+    // table's CHECK, so leaving a screen maps onto 'back'.
+    hitOf: (t) => t.closest('[data-photo]')          ? 'option'
+                : t.closest('[data-goto]')           ? 'option'
+                : t.closest('[data-back]')           ? 'back'
+                : t.closest('[data-close]')          ? 'back'
+                : t.closest('.tab')                  ? 'option'
+                : t.closest('.kb-key')               ? 'option'
+                : t.closest('input, textarea')       ? 'option'
+                : t.closest('.btn')                  ? 'option'
+                : 'none',
+    taskId: () => null,
+    gazeState: () => null,
+    studyMode: () => studyMode
+  });
+
+  const PREVIEW = Study.PREVIEW_MODE ? Study.PREVIEW_STEP : null;
+  const TRACKING_OFF = Study.TRACKING_OFF;
+  const write = Study.write;
+
+  // The task battery has not moved out of index.html yet, so this app
+  // runs free-play only for now. Stated rather than left undefined: the
+  // session records the mode it actually ran under.
+  let studyMode = 'free';
+  const inQuestion = () => false;
+
+  // =====================================================================
+  // Rendering
+  // =====================================================================
+  function creditMarkup(face, who, at) {
+    return `<div class="credit">
+      <img src="${IMG(face)}" alt="">
+      <div><b>${esc(who)}</b><span>${esc(at)}</span></div>
+    </div>`;
+  }
+
+  function masonryMarkup(spec, kind) {
+    const col = items => items.map(([src, size]) =>
+      `<img class="${size}" src="${IMG(src)}" alt="" data-photo="${src}" data-kind="${kind}">`).join('');
+    return `<div class="masonry">
+      <div class="col">${col(spec.left)}</div>
+      <div class="col">${col(spec.right)}</div>
+    </div>`;
+  }
+
+  function keyboardMarkup() {
+    const rows = [
+      ['q','w','e','r','t','y','u','i','o','p'],
+      ['a','s','d','f','g','h','j','k','l'],
+      ['z','x','c','v','b','n','m']
+    ];
+    return `<div class="keyboard" id="keyboard">
+      ${rows.map((r, i) => `<div class="kb-row">
+        ${i === 2 ? '<div class="kb-key wide">&#8679;</div>' : ''}
+        ${r.map(k => `<div class="kb-key" data-key="${k}">${k}</div>`).join('')}
+        ${i === 2 ? '<div class="kb-key wide">&#9003;</div>' : ''}
+      </div>`).join('')}
+      <div class="kb-row">
+        <div class="kb-key wide" style="min-width:42px">123</div>
+        <div class="kb-key space" data-key=" ">space</div>
+        <div class="kb-key act" data-key="\\n">return</div>
+      </div>
+    </div>`;
+  }
+
+  const SCREEN_BODY = {
+    logged_out: () => `
+      <div class="splash">
+        <img class="bg" src="${IMG('lo01')}" alt="">
+        <div class="wordmark">
+          <span class="glyph">
+            <img src="photo-assets/icon/logo_a.svg" alt="">
+            <img class="flip" src="photo-assets/icon/logo_b.svg" alt="">
+          </span>
+          <span>photo</span>
+        </div>
+        ${creditMarkup('lo03', 'Pawel Czerwinski', '@pawel_czerwinski')}
+        <div class="actions">
+          <button class="btn" data-goto="login">Log in</button>
+          <button class="btn solid" data-goto="register_1">Register</button>
+        </div>
+      </div>`,
+
+    login: () => `
+      <div class="pad">
+        <button class="back" data-back="logged_out" aria-label="Back">&#8592;</button>
+        <h1 class="title">Log in</h1>
+        <div style="margin-top:32px">
+          <input class="field" type="email" placeholder="jane@example.com" autocomplete="off">
+          <input class="field" type="password" placeholder="••••••••••••" autocomplete="off">
+          <div style="margin-top:16px"><button class="btn solid" data-goto="discover">Log in</button></div>
+        </div>
+      </div>
+      ${keyboardMarkup()}`,
+
+    register_1: () => `
+      <div class="pad">
+        <button class="back" data-back="logged_out" aria-label="Back">&#8592;</button>
+        <h1 class="title">Register</h1>
+        <div style="margin-top:32px">
+          <input class="field" type="email" placeholder="jane@example.com" autocomplete="off">
+          <input class="field" type="password" placeholder="••••••••••••" autocomplete="off">
+          <div style="margin-top:16px"><button class="btn solid" data-goto="register_2">Next</button></div>
+        </div>
+      </div>
+      ${keyboardMarkup()}`,
+
+    register_2: () => `
+      <div class="pad">
+        <button class="back" data-back="register_1" aria-label="Back">&#8592;</button>
+        <h1 class="title">Register</h1>
+        <div style="margin-top:32px">
+          <input class="field" type="text" placeholder="the_jane" autocomplete="off">
+          <div style="margin-top:16px"><button class="btn solid" data-goto="discover">Sign up</button></div>
+          <p class="legal">By signing up, you agree to Photo's <a href="#" onclick="return false">Terms of Service</a> and <a href="#" onclick="return false">Privacy Policy</a>.</p>
+        </div>
+      </div>
+      ${keyboardMarkup()}`,
+
+    discover: () => `
+      <div class="pad"><h1 class="title">Discover</h1>
+        <div class="section-label">What's new today</div>
+      </div>
+      <div class="rail">
+        ${FEATURED.map(f => `<div class="rail-card" data-photo="${f.src}" data-kind="featured">
+          <img class="shot" src="${IMG(f.src)}" alt="">
+          ${creditMarkup(f.face, f.who, f.at)}
+        </div>`).join('')}
+      </div>
+      <div class="pad">
+        <div class="section-label">Browse all</div>
+        ${masonryMarkup(BROWSE, 'browse')}
+        <div style="margin:32px 0 24px"><button class="btn">See more</button></div>
+      </div>`,
+
+    search: () => `
+      <div class="pad">
+        <h1 class="title">Search</h1>
+        <div style="margin-top:32px">
+          <input class="field" id="search-input" type="search" placeholder="Search all photos"
+                 value="${esc(searchText)}" autocomplete="off">
+        </div>
+      </div>`,
+
+    search_results: () => `
+      <div class="pad">
+        <h1 class="title">Search</h1>
+        <div style="margin-top:32px">
+          <input class="field" id="search-input" type="search" placeholder="Search all photos"
+                 value="${esc(searchText)}" autocomplete="off">
+        </div>
+        <div class="section-label">All results</div>
+        <div class="grid3">
+          ${RESULTS.map(r => `<img src="${IMG(r)}" alt="" data-photo="${r}" data-kind="result">`).join('')}
+        </div>
+        <div style="margin:32px 0 24px"><button class="btn">See more</button></div>
+      </div>`,
+
+    chats: () => CHATS.map(c => `
+      <div class="chat-row" data-goto="chat" data-who="${c.id}">
+        <img src="${IMG(c.face)}" alt="">
+        <div>
+          <div class="who">${esc(c.who)}</div>
+          <div class="msg">${esc(c.last)}</div>
+        </div>
+      </div>`).join(''),
+
+    chat: () => {
+      const person = CHATS.find(c => c.id === chatWith) || CHATS[0];
+      return `<div class="thread">
+        ${THREAD.map(m => `<div class="bubble-row ${m.from === 'me' ? 'out' : ''}">
+          <img src="${IMG(m.from === 'me' ? 'j06' : person.face)}" alt="">
+          <div class="bubble">${esc(m.text)}</div>
+        </div>`).join('')}
+      </div>`;
+    },
+
+    profile: () => `
+      <img class="avatar-xl" src="${IMG('j06')}" alt="">
+      <h1 class="profile-name">Jane</h1>
+      <p class="profile-where">San Francisco, CA</p>
+      <div class="pad" style="margin-top:31px">
+        <button class="btn solid">Follow Jane</button>
+        <button class="btn">Message</button>
+        <div style="margin-top:32px">${masonryMarkup(PROFILE_GRID, 'profile')}</div>
+        <div style="margin:32px 0 24px"><button class="btn">See more</button></div>
+      </div>`
+  };
+
+  // Screens that draw their own title bar instead of the page heading.
+  const NAV_TITLE = {
+    chats: () => ({ title: 'Chats', back: null }),
+    chat:  () => ({ title: (CHATS.find(c => c.id === chatWith) || CHATS[0]).who, back: 'chats' })
+  };
+
+  function renderTabs() {
+    const bar = document.getElementById('tabbar');
+    bar.hidden = !TABBED.has(screen);
+    if (bar.hidden) return;
+    // Profile's glyph is two exported pieces — a head and a shoulder arc —
+    // composed at the size the design draws them. Redrawing it as one
+    // shape would not be the same icon.
+    const icon = t => t.icon
+      ? `<img src="photo-assets/icon/${t.icon}.svg" alt="">`
+      : `<span style="position:relative;display:block;width:22px;height:22px">
+           <img src="photo-assets/icon/i05.svg" alt="" style="position:absolute;left:6px;top:1px;width:10px;height:10px">
+           <img src="photo-assets/icon/i08.svg" alt="" style="position:absolute;left:3px;top:12px;width:16px;height:9px">
+         </span>`;
+    bar.innerHTML = TABS.map(t => `
+      <button class="tab${t.compose ? ' compose' : ''}"
+              ${t.screen ? `data-goto="${t.screen}"` : ''}
+              aria-label="${t.label}"
+              aria-current="${t.screen === screen}">${icon(t)}</button>`).join('');
+  }
+
+  function renderNav() {
+    const el = document.getElementById('navbar');
+    const spec = NAV_TITLE[screen] && NAV_TITLE[screen]();
+    el.hidden = !spec;
+    if (!spec) return;
+    el.innerHTML = (spec.back ? `<button class="back" data-back="${spec.back}" aria-label="Back">&#8592;</button>` : '')
+                 + `<span>${esc(spec.title)}</span>`;
+  }
+
+  function render() {
+    document.getElementById('phone').classList.toggle('bleed', BLEED.has(screen));
+    const host = document.getElementById('screen');
+    host.innerHTML = (SCREEN_BODY[screen] || SCREEN_BODY.discover)();
+    host.scrollTop = 0;
+    renderNav();
+    renderTabs();
+    renderOverlay();
+  }
+
+  function renderOverlay() {
+    const el = document.getElementById('overlay');
+    el.hidden = !overlay;
+    if (!overlay) return;
+    if (overlay === 'photo_open') {
+      const credit = FEATURED.find(f => f.src === openPhoto);
+      el.innerHTML = `
+        <img class="photo-full" src="${IMG(openPhoto)}" alt="">
+        <div class="overlay-bar">
+          ${credit ? creditMarkup(credit.face, credit.who, credit.at) : '<span></span>'}
+          <button class="close-x" data-close="1" aria-label="Close">&times;</button>
+        </div>`;
+    }
+  }
+
+  // =====================================================================
+  // Navigation
+  //
+  // Every move is recorded as a selection: `step` is the screen they left
+  // and `value` is what they chose. That is the same shape the shapes app
+  // writes, which is why the dashboard's route scoring works here without
+  // knowing anything about photographs.
+  // =====================================================================
+  function record(value) {
+    write('selections', {
+      step: screen,
+      value,
+      duration_ms: Date.now() - stepEnteredAt,
+      task_id: null
+    });
+  }
+
+  function go(next, value) {
+    if (!SCREENS.includes(next)) return;
+    record(value != null ? value : next);
+    screen = next;
+    overlay = null;
+    stepEnteredAt = Date.now();
+    render();
+  }
+
+  function showOverlay(kind, photo) {
+    overlay = kind;
+    openPhoto = photo || null;
+    // Not a screen change, so the clock on `screen` keeps running: opening
+    // a photo is time spent on the screen you opened it from.
+    record(`open:${photo || kind}`);
+    renderOverlay();
+  }
+
+  function closeOverlay() {
+    record(`close:${openPhoto || overlay}`);
+    overlay = null;
+    openPhoto = null;
+    renderOverlay();
+  }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    if (!t) return;
+
+    if (t.closest('[data-close]')) { closeOverlay(); return; }
+    if (overlay === 'photo_open') return;   // the layer swallows the rest
+
+    const photo = t.closest('[data-photo]');
+    if (photo) { showOverlay('photo_open', photo.dataset.photo); return; }
+
+    const back = t.closest('[data-back]');
+    if (back) { go(back.dataset.back, 'back'); return; }
+
+    const goto = t.closest('[data-goto]');
+    if (goto) {
+      if (goto.dataset.who) chatWith = goto.dataset.who;
+      go(goto.dataset.goto, goto.dataset.who || undefined);
+      return;
+    }
+
+    // Tapping the search field raises the keyboard, exactly as the
+    // prototype does. It is an overlay rather than a screen: the
+    // participant is still on Search.
+    if (t.closest('#search-input') && screen === 'search') {
+      overlay = 'keyboard';
+      return;
+    }
+  });
+
+  // Submitting a search is the one place typed text changes the screen.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const input = e.target.closest && e.target.closest('#search-input');
+    if (!input) return;
+    searchText = input.value;
+    go('search_results', `search:${searchText}`);
+  });
+
+  // =====================================================================
+  // Preview mode: the dashboard renders one screen statically behind its
+  // heatmap dots. Non-interactive and recording nothing, which the core
+  // already enforces — this only picks the screen.
+  // =====================================================================
+  if (PREVIEW) screen = PREVIEW;
+
+  const clock = document.getElementById('clock');
+  if (clock && !PREVIEW) {
+    const tick = () => {
+      const d = new Date();
+      clock.textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    tick();
+    setInterval(tick, 20000);
+  }
+
+  render();
+
+  if (!TRACKING_OFF) {
+    // Paint first, then open the session — the app must appear even if
+    // analytics is unavailable.
+    Study.begin(false);
+  }
+</script>
+</body>
+</html>
