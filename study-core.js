@@ -257,6 +257,22 @@ window.Study = (function () {
     // Read as properties rather than copied at import time: begin() swaps
     // the session id, and a destructured copy would keep writing rows
     // against the attempt the participant has already abandoned.
+    // Where this app's measured box is on screen, right now.
+    //
+    // The dashboard paints click dots over a preview of the app, and it has
+    // to project them onto the same box the coordinates were measured
+    // against. It used to look for '.wrap' by name, which is the shapes
+    // app's column and exists in no other app — so a second app's dots
+    // silently fell back to being spread across the whole preview frame.
+    // Asking the app itself works for any app, including ones not written
+    // yet. Returns null when the box is not laid out.
+    contentRect() {
+      const box = cfg.content && cfg.content();
+      if (!box) return null;
+      const r = box.getBoundingClientRect();
+      return (r.width && r.height) ? r : null;
+    },
+
     get sessionId()  { return sessionId; },
     get sessionReady() { return sessionReady; },
     get userId()     { return userId; },

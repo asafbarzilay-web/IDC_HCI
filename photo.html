@@ -73,6 +73,16 @@
     padding: 24px 0;
   }
 
+  /* Embedded in one of the dashboard's preview frames, which are shorter
+     than 812px. Scaled to fit rather than clipped: a preview that cuts the
+     bottom off the screen hides exactly the part -- the tab bar, the
+     buttons -- whose heatmap you opened the panel to read.
+     Participants never get this; their frame stays 1:1, because scaling
+     the phone would change how big every target physically is. */
+  .stage.fit { position: relative; display: block; padding: 0; height: 100vh; }
+  .stage.fit > div { position: static; }
+  .stage.fit .phone { position: absolute; transform-origin: top left; box-shadow: none; }
+
   /* The measured box. Study.configure() points at this, so every click
      coordinate is relative to the phone screen and nothing else. */
   /* On the splash the status bar floats over the artwork instead of
@@ -902,6 +912,24 @@
   // already enforces — this only picks the screen.
   // =====================================================================
   if (PREVIEW) screen = PREVIEW;
+
+  // Fit the frame to the viewport for the dashboard's previews. Runs on
+  // resize too: the panel is resizable and the canvas over it redraws from
+  // this box, so a stale scale would put every dot in the wrong place.
+  if (Study.PREVIEW_MODE || Study.AUTHOR_MODE || Study.QUESTION_PREVIEW) {
+    const stage = document.querySelector('.stage');
+    stage.classList.add('fit');
+    const fit = () => {
+      const phone = document.getElementById('phone');
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const s = Math.min(vw / 375, vh / 812, 1);
+      phone.style.transform = `scale(${s})`;
+      phone.style.left = `${Math.round((vw - 375 * s) / 2)}px`;
+      phone.style.top = `${Math.round((vh - 812 * s) / 2)}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+  }
 
   const clock = document.getElementById('clock');
   if (clock && !PREVIEW) {

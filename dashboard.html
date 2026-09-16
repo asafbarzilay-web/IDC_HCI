@@ -2026,10 +2026,14 @@
     const frame = document.getElementById(frameId);
     try {
       const fwin = frame.contentWindow;
-      const wrap = fwin.document.querySelector('.wrap');
-      if (!wrap) return null;
-      const r = wrap.getBoundingClientRect();
-      if (!r.width || !r.height) return null;
+      // Ask the app where its measured box is. Looking for '.wrap' by name
+      // only ever worked for the shapes selector; any other app returned
+      // null here and every dot was then spread across the whole frame,
+      // which looks like data rather than like a bug. '.wrap' stays as the
+      // fallback for a preview whose core has not booted yet.
+      const r = (fwin.Study && fwin.Study.contentRect && fwin.Study.contentRect())
+             || (fwin.document.querySelector('.wrap') || {}).getBoundingClientRect?.();
+      if (!r || !r.width || !r.height) return null;
       const sx = canvas.width / fwin.innerWidth;
       const sy = canvas.height / fwin.innerHeight;
       return { left: r.left * sx, top: r.top * sy, width: r.width * sx, height: r.height * sy };
