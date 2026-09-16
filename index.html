@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
+<script src="study-core.js"></script>
 <script>
   // Isolated client: never loads or stores an auth session, so inserts
   // are always made as the anonymous role. Without this, logging into
@@ -760,22 +761,47 @@
   const previewStepParam = new URLSearchParams(location.search).get('previewStep');
   const PREVIEW_MODE = previewStepParam in PREVIEW_STEP_INDEX;
 
+  // What this app is, in the terms the shared core cannot work out for
+  // itself: the box clicks are measured against, which screen is showing,
+  // and what a click landed on. Called here, before the flags below read
+  // back out of the core -- those are plain values, captured once, and
+  // would otherwise capture the pre-configure defaults. The hooks
+  // themselves resolve at call time and may name things declared later.
+  Study.configure({
+    app: 'shapes',
+    screens: ['number', 'letter', 'shape', 'success'],
+    content: () => document.querySelector('.wrap'),
+    currentStep: () => currentStepLabel(),
+    // The selector has no overlaid screens: every click belongs to the
+    // step it was made on.
+    currentOverlay: () => null,
+    onAppScreen: () => onAppScreen(),
+    overlayActive: () => overlayActive,
+    hitOf: (t) => t.closest('.option-card') ? 'option'
+                : t.closest('#back-btn')    ? 'back'
+                : t.closest('#restart-btn') ? 'restart'
+                : 'none',
+    taskId: () => { const t = currentTask(); return t ? t.task_id : null; },
+    gazeState: () => gazeState,
+    studyMode: () => studyMode
+  });
+
   // Author mode: the real app, fully interactive, but recording nothing.
   // The dashboard embeds it so a task can be defined by demonstration —
   // click the route you want and each choice is reported to the parent.
   // Demonstrating is the only way a task can name a step or option that
   // actually exists; a hand-written task drifts the moment the flow changes.
-  const AUTHOR_MODE = new URLSearchParams(location.search).get('authorMode') === '1';
+  const AUTHOR_MODE = Study.AUTHOR_MODE;
 
   // Question preview: renders whatever question config the dashboard posts
   // in, using the same code participants get. The builder used to draw its
   // own copy of every question type, which meant "what participants see"
   // was a promise maintained by hand — and it had already drifted once.
-  const QUESTION_PREVIEW = new URLSearchParams(location.search).get('previewQuestion') === '1';
-  const DEBUG_GAZE = new URLSearchParams(location.search).get('debug') === '1';
+  const QUESTION_PREVIEW = Study.QUESTION_PREVIEW;
+  const DEBUG_GAZE = Study.DEBUG;
 
   // All three are observation, not participation — none may write.
-  const TRACKING_OFF = PREVIEW_MODE || AUTHOR_MODE || QUESTION_PREVIEW;
+  const TRACKING_OFF = Study.TRACKING_OFF;
 
   // Which app this file is. One database now holds two studies, and every
   // row this file writes and every setting it reads is scoped by this.
@@ -792,16 +818,7 @@
   }
 
   const state = { step: 0, number: null, letter: null, shape: null };
-  let sessionId = newId();
   let stepEnteredAt = Date.now();
-  let sessionReady = null;
-
-  // Click ordinal per step, counted in the browser at click time so it
-  // reflects the true order the participant clicked — not the order the
-  // async inserts happened to reach the database. Counts persist across
-  // Back/forward within a run and reset only when a new run starts.
-  const newClickCounts = () => ({ number: 0, letter: 0, shape: 0, success: 0 });
-  let clickSeq = newClickCounts();
 
   if (PREVIEW_MODE) {
     state.step = PREVIEW_STEP_INDEX[previewStepParam];
@@ -812,71 +829,14 @@
     }
   }
 
-  function newId() {
-    // crypto.randomUUID needs a secure context; fall back where it isn't.
-    try { return crypto.randomUUID(); }
-    catch {
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-      });
-    }
-  }
-
-  function getOrCreateUserId() {
-    // localStorage can throw outright (private mode, blocked storage).
-    // Losing persistence is fine; crashing the app is not.
-    const key = 'idc_hci_user_id';
-    try {
-      let id = localStorage.getItem(key);
-      if (!id) {
-        id = newId();
-        localStorage.setItem(key, id);
-      }
-      return id;
-    } catch {
-      return newId();
-    }
-  }
-
-  function detectPlatform() {
-    const ua = navigator.userAgent || '';
-    const isTouchMac = /Mac/i.test(navigator.platform || '') && navigator.maxTouchPoints > 1;
-    const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua) || isTouchMac;
-    return isMobile ? 'mobile' : 'desktop';
-  }
-
-  const userId = getOrCreateUserId();
-  const platform = detectPlatform();
+  // Identity, the session lifecycle and every insert live in study-core.js
+  // now. Aliased rather than called through `Study.` at each of its ~20 use
+  // sites: the alias keeps those sites reading as they did, and this is the
+  // one line that says where the function actually comes from.
+  const write = Study.write;
 
   function currentStepLabel() {
     return state.step < 3 ? STEPS[state.step].key : 'success';
-  }
-
-  // Selections and clicks reference a session row, so that row has to
-  // exist first. startSession() keeps the in-flight insert as a promise
-  // and every later write waits on it — no ordering races, no orphans.
-  function startSession(isRestart) {
-    if (TRACKING_OFF || !supabaseClient) return Promise.resolve();
-    return supabaseClient.from('sessions')
-      .insert({ session_id: sessionId, user_id: userId, app: APP, platform, is_restart: isRestart,
-                gaze_state: gazeState, study_mode: studyMode })
-      .then(({ error }) => { if (error) console.error('startSession failed', error); })
-      .catch(err => console.error('startSession failed', err));
-  }
-
-  // Capture the ids at call time: a restart swaps both sessionId and
-  // sessionReady, and a write already in flight must keep its own pair.
-  async function write(table, row) {
-    if (TRACKING_OFF || !supabaseClient) return;
-    const sid = sessionId, ready = sessionReady;
-    try {
-      await ready;
-      const { error } = await supabaseClient.from(table).insert({ session_id: sid, ...row });
-      if (error) console.error(`insert into ${table} failed`, error);
-    } catch (err) {
-      console.error(`insert into ${table} failed`, err);
-    }
   }
 
   function select(key, value) {
@@ -965,10 +925,11 @@
     flushGaze();
 
     // Start over begins a genuinely new attempt: new session row, flagged
-    // as a restart so the dashboard can count them.
-    sessionId = newId();
-    sessionReady = startSession(true);
-    clickSeq = newClickCounts();
+    // as a restart so the dashboard can count them. begin() swaps the
+    // session id and resets the click ordinals together — they describe one
+    // attempt, and a version that reset only one of them would number the
+    // new run's clicks from where the abandoned one left off.
+    Study.begin(true);
     state.step = 0;
     state.number = null;
     state.letter = null;
@@ -977,60 +938,6 @@
     render();
   }
 
-  document.addEventListener('click', (e) => {
-    // Consent and calibration clicks are not study behaviour. They happen
-    // over the app while state.step still reads 'number', so without this
-    // guard 27 calibration clicks would land in the first step's heatmap
-    // and every one of them would score as a mis-click.
-    if (overlayActive) return;
-
-    // Question screens are not the app. Their clicks were being written as
-    // clicks on the 'number' step, every one of them scoring as a mis-click
-    // because a question option is not an .option-card.
-    if (!onAppScreen()) return;
-
-    // Capture phase: runs before any button's own click handler mutates
-    // state, so the logged step always reflects where the click landed.
-    //
-    // Anchor to the content column (.wrap), not the viewport. The column
-    // is a fixed-max-width block whose layout is identical everywhere,
-    // while the surrounding margins vary hugely with window size — so
-    // column-relative coordinates are the only ones that mean the same
-    // thing on a phone, a laptop, and the dashboard's small preview.
-    //
-    // Values intentionally fall outside 0-1 for clicks in the margins
-    // (negative to the left/above, >1 to the right/below). The dashboard
-    // maps them onto the preview's own column, so they stay in the right
-    // place instead of being clamped to an edge.
-    const rect = document.querySelector('.wrap').getBoundingClientRect();
-    // A zero-sized column (hidden tab, not yet laid out) would divide by
-    // zero and store Infinity/NaN. Nothing meaningful to record — skip.
-    if (!rect.width || !rect.height) return;
-    const step = currentStepLabel();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-
-    // What the click actually landed on. Recorded here, where the answer
-    // is certain, rather than derived later from click counts — Back and
-    // Start over do something useful without being selections, so any
-    // count-based guess would misreport them as mis-clicks.
-    // Guard the target: closest() only exists on Elements, and a click can
-    // report a non-Element target. Throwing here would drop the click
-    // entirely — losing exactly the mis-click we're trying to measure.
-    const t = e.target instanceof Element ? e.target : null;
-    const hit = !t                          ? 'none'
-              : t.closest('.option-card')   ? 'option'
-              : t.closest('#back-btn')      ? 'back'
-              : t.closest('#restart-btn')   ? 'restart'
-              : 'none';
-
-    clickSeq[step] += 1;
-    // Stamped with the task in progress so two route tasks that both use
-    // the "shape" screen do not share one heatmap. Null in free play.
-    const task = currentTask();
-    write('clicks', { step, x, y, seq: clickSeq[step], hit,
-                      task_id: task ? task.task_id : null });
-  }, true);
 
   function render() {
     // A step boundary ends whatever look was in progress: the same screen
@@ -1239,7 +1146,7 @@
   // every second the phone is held, so the estimate is noise.
   function gazeSupported() {
     return !TRACKING_OFF
-      && platform === 'desktop'
+      && Study.platform === 'desktop'
       && window.isSecureContext
       && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
@@ -1259,7 +1166,7 @@
   var flushGaze = function flushGaze_() {
     if (!supabaseClient || !gazeBuffer.length) return Promise.resolve();
     const rows = drainGaze();
-    const sid = sessionId, ready = sessionReady;
+    const sid = Study.sessionId, ready = Study.sessionReady;
     return (async () => {
       try {
         await ready;
@@ -1484,7 +1391,7 @@
     } else if (gazeState !== 'tracking') {
       trace.push(`state was "${gazeState}", not "tracking" — nothing to update`);
     } else {
-      const sid = sessionId, ready = sessionReady;
+      const sid = Study.sessionId, ready = Study.sessionReady;
       gazeState = 'stopped';
       try {
         await ready;
@@ -1778,7 +1685,7 @@
       routeAttempts = 1;
       routeRetry = false;
       state.step = 0; state.number = null; state.letter = null; state.shape = null;
-      clickSeq = newClickCounts();
+      Study.resetClickSeq();
       render();
       return;
     }
@@ -2164,7 +2071,7 @@
     // A clean run at the first task: free play leaves the selector part
     // way through, and the task should not inherit that position.
     state.step = 0; state.number = null; state.letter = null; state.shape = null;
-    clickSeq = newClickCounts();
+    Study.resetClickSeq();
     taskIndex = -1;
     nextTask();
   });
@@ -2228,7 +2135,7 @@
 
     // Open the session (skipped in preview mode, so the dashboard's four
     // preview frames never create phantom sessions).
-    sessionReady = startSession(false);
+    Study.begin(false);
 
     // Only now: the battery needs a session to attach its answers to, and
     // loading it earlier would race the insert it depends on.
