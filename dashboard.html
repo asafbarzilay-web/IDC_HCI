@@ -399,6 +399,13 @@
     text-transform: uppercase; color: #C15F3C;
   }
 
+  /* A mode this app cannot honour. Dimmed rather than removed: the three
+     modes are the study's vocabulary, and hiding two of them would make
+     the app look like it has fewer choices rather than one unfinished
+     capability. */
+  .mode-card.unavailable { opacity: 0.45; }
+  .mode-card.unavailable:hover { border-color: #E0DBCE; cursor: not-allowed; }
+
   .heatmap-tab .tab-metric {
     opacity: 0.72;
     font-weight: 400;
@@ -1502,6 +1509,7 @@
         <p class="tr-meta" style="margin-bottom:12px">One link, three behaviours. Changing this
         takes effect for the next person who opens it.</p>
         <div class="mode-grid" id="mode-grid"></div>
+        <div class="empty-note" id="mode-note" hidden></div>
         <div class="mode-link">Send participants: <code id="app-link">index.html</code></div>
       </div>
 
@@ -1603,6 +1611,14 @@
       // the only place the list is written down. The app and the dashboard
       // agree here or they agree nowhere.
       steps: ['number', 'letter', 'shape'],
+      // Whether the app can actually RUN a task, as opposed to having
+      // tasks authored against it. Authoring lives here in the dashboard;
+      // running one means the app itself reads the mode, fetches the
+      // battery, shows the prompt and scores the route. An app that
+      // cannot do that will ignore any mode you set and hand every
+      // participant free play, silently — so the mode picker refuses
+      // rather than letting a study be run that records nothing.
+      runsTasks: true,
       // Every screen a click or a gaze point can land on, with the label
       // the dashboard shows. Wider than `steps`: 'success' is somewhere a
       // participant looks but never answers on, and leaving it out of the
@@ -1618,6 +1634,9 @@
     photo: {
       label: 'photo',
       file: 'photo.html',
+      // Not yet: the battery still lives in index.html. Flip this the
+      // moment photo.html can read a mode and run a task.
+      runsTasks: false,
       // Must match SCREENS in photo.html. The database no longer
       // constrains `step`, so these two lists agree here or nowhere.
       steps: ['logged_out', 'login', 'register_1', 'register_2',
@@ -2649,11 +2668,24 @@
   let studyMode = 'tasks';
 
   function renderModePicker() {
+    const runs = APPS[currentApp].runsTasks;
     document.getElementById('mode-grid').innerHTML =
       Object.entries(STUDY_MODES).map(([k, m]) => `
-        <button class="mode-card ${k === studyMode ? 'on' : ''}" data-mode="${k}">
+        <button class="mode-card ${k === studyMode ? 'on' : ''}${!runs && k !== 'free' ? ' unavailable' : ''}"
+                data-mode="${k}">
           <b>${m.label}</b><span>${m.blurb}</span>
         </button>`).join('');
+
+    // Said on screen rather than only when you click. A control that looks
+    // available and silently does nothing is the thing worth avoiding here.
+    const note = document.getElementById('mode-note');
+    note.hidden = runs;
+    if (!runs) {
+      note.textContent = `${APPS[currentApp].label} can't run tasks yet — it doesn't read the `
+        + `study mode or fetch the battery. Tasks can be authored against it; they just won't `
+        + `be handed to anyone until the app can run them.`;
+    }
+
     document.getElementById('app-link').textContent =
       new URL(APPS[currentApp].file, location.href).href;
   }
@@ -2672,6 +2704,17 @@
 
     // Saying yes to a mode that cannot work is worse than refusing it:
     // "Tasks only" with an empty sequence would show participants nothing.
+    // Refusing a mode the app cannot honour. The failure it prevents is
+    // not an error: the mode saves, the picker shows it, and every
+    // participant quietly gets free play anyway — so you find out after
+    // running the study, from data that is missing rather than wrong.
+    if (wanted !== 'free' && !APPS[currentApp].runsTasks) {
+      alert(`${APPS[currentApp].label} can't run tasks yet — it doesn't read the study mode or `
+          + `fetch the battery, so this setting would be ignored and everyone would get free `
+          + `play. You can still author tasks against it; they just won't be handed out.`);
+      return;
+    }
+
     const live = tasks.filter(t => t.position != null && !t.hidden).length;
     if (wanted !== 'free' && !live) {
       alert('Activate at least one task first — this mode would leave participants with nothing to do.');
