@@ -1637,6 +1637,20 @@
 
   const appFile = () => APPS[currentApp].file;
 
+  // Every preview frame carries this. GitHub Pages serves HTML with
+  // `cache-control: max-age=600`, and each ?previewStep= value is its own
+  // cache entry — so after deploying a change to an app, the dashboard
+  // shows whichever previews the browser happened to have cached and
+  // fetches the rest fresh, for up to ten minutes. That is worse than a
+  // stale page: the heatmap dots are drawn over the preview, so a stale
+  // one paints today's clicks onto yesterday's layout and looks right.
+  //
+  // Fixed once per dashboard load rather than per render, so previews
+  // still cache normally while you work and a reload always gets the
+  // current app.
+  const PREVIEW_V = Date.now();
+  const previewSrc = (step) => `${appFile()}?previewStep=${step}&v=${PREVIEW_V}`;
+
   // How a screen id is written for a reader. Capitalising the id worked
   // while ids were single words -- it turns 'logged_out' into 'Logged_out'
   // and 'search_results' into 'Search_results'. The manifest carries the
@@ -2106,7 +2120,7 @@
     if (!btn) return;
     document.querySelectorAll('.heatmap-tab').forEach(b => b.classList.toggle('active', b === btn));
     currentHeatmapStep = btn.dataset.step;
-    document.getElementById('heatmap-frame').src = `${appFile()}?previewStep=${currentHeatmapStep}`;
+    document.getElementById('heatmap-frame').src = previewSrc(currentHeatmapStep);
     renderStage();
   });
 
@@ -2139,7 +2153,7 @@
     // frames at the app regardless would draw its first screen under a
     // panel that has no data for it — an empty heatmap over a real screen
     // reads as "nobody clicked here", not as "this study isn't built yet".
-    const src = currentHeatmapStep ? `${appFile()}?previewStep=${currentHeatmapStep}` : 'about:blank';
+    const src = currentHeatmapStep ? previewSrc(currentHeatmapStep) : 'about:blank';
     document.getElementById('heatmap-frame').src = src;
     document.getElementById('gaze-frame').src = src;
   }
@@ -2865,7 +2879,7 @@
           </div>
           <div id="${id}-stats">${taskStepPanel(t.task_id, STEPS[0])}</div>
           <div class="tr-heat-wrap">
-            <iframe id="${id}-frame" src="${appFile()}?previewStep=${STEPS[0] || ''}" tabindex="-1" title="Screen preview"></iframe>
+            <iframe id="${id}-frame" src="${previewSrc(STEPS[0] || '')}" tabindex="-1" title="Screen preview"></iframe>
             <canvas id="${id}-canvas"></canvas>
           </div>
           <div class="tr-heat-legend" id="${id}-legend"></div>
@@ -2969,7 +2983,7 @@
              data-step="${st}" data-layer="${layer}">
           <div class="tr-mini-label">${st}</div>
           <div class="tr-mini-wrap">
-            <iframe id="${id}-frame" src="${appFile()}?previewStep=${st}" tabindex="-1" title="${st} screen"></iframe>
+            <iframe id="${id}-frame" src="${previewSrc(st)}" tabindex="-1" title="${st} screen"></iframe>
             <canvas id="${id}-canvas"></canvas>
           </div>
           <div class="tr-mini-note" id="${id}-legend"></div>
@@ -3025,7 +3039,7 @@
           // than no panel at all.
           paintStats();
           // Changing the screen reloads the preview, whose load redraws.
-          frame.src = `${appFile()}?previewStep=${step.dataset.heatStep}`;
+          frame.src = previewSrc(step.dataset.heatStep);
           return;
         }
         const layer = e.target.closest('[data-heat-layer]');
@@ -3375,7 +3389,7 @@
     if (!e.currentTarget.open) return;
     const frame = document.getElementById('gaze-frame');
     if (!frame.getAttribute('src')) {
-      frame.src = `${appFile()}?previewStep=${currentGazeStep}`;
+      frame.src = previewSrc(currentGazeStep);
     }
     renderGaze();
   });
@@ -3385,7 +3399,7 @@
 
   document.getElementById('gaze-step').addEventListener('change', (e) => {
     currentGazeStep = e.target.value;
-    document.getElementById('gaze-frame').src = `${appFile()}?previewStep=${currentGazeStep}`;
+    document.getElementById('gaze-frame').src = previewSrc(currentGazeStep);
     rebuildGazeSessions(lastData);
     renderGaze();
   });
