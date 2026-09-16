@@ -104,9 +104,14 @@
      shadow is pointless. The 375px width is kept either way — a
      participant on a 390px phone sees the same layout as one on a
      laptop, which is the whole reason for a fixed frame. */
+  /* `:not(.fit)` matters: the dashboard's author and preview frames are
+     narrower than 420px, so without it this rule fires inside them and
+     collapses the phone to the frame's height — which the fit scaling then
+     shrinks a second time, leaving a small stranded phone. This rule is
+     about a participant holding a real phone, not about a narrow box. */
   @media (max-width: 420px) {
-    .stage { padding: 0; align-items: flex-start; }
-    .phone { box-shadow: none; height: 100vh; height: 100dvh; }
+    .stage:not(.fit) { padding: 0; align-items: flex-start; }
+    .stage:not(.fit) .phone { box-shadow: none; height: 100vh; height: 100dvh; }
   }
 
   /* --- status bar --------------------------------------------------- */
@@ -545,6 +550,23 @@
   const esc = s => String(s).replace(/[&<>"']/g,
     c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
+  // Author mode: the dashboard embeds this app so a route task can be
+  // defined by demonstration — you click the route you want and each
+  // choice is reported to the parent. Demonstrating is the only way a task
+  // can name a screen or target that actually exists; a hand-written route
+  // drifts the moment the app changes.
+  //
+  // Without this the authoring frame is a working app that captures
+  // nothing: you click through, the path stays empty, and there is no
+  // error to explain why.
+  function reportToAuthor(type, payload) {
+    if (!Study.AUTHOR_MODE || window.parent === window) return;
+    // Same-origin only: the dashboard serves this frame, so there is no
+    // reason to broadcast the study's design more widely.
+    window.parent.postMessage({ source: 'idc-hci-author', type, ...payload },
+                              window.location.origin);
+  }
+
   // =====================================================================
   // Tell the shared core what this app is.
   //
@@ -835,6 +857,7 @@
   // knowing anything about photographs.
   // =====================================================================
   function record(value) {
+    reportToAuthor('choice', { step: screen, value });
     write('selections', {
       step: screen,
       value,
@@ -929,6 +952,12 @@
     };
     fit();
     window.addEventListener('resize', fit);
+    // A resize event is not enough. These frames are sized by the parent
+    // and are often laid out after this script runs — fit() then computes
+    // a scale for a viewport that no longer exists, and the phone is left
+    // stranded at the wrong size in a corner. ResizeObserver fires for
+    // that case too.
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(document.documentElement);
   }
 
   const clock = document.getElementById('clock');
