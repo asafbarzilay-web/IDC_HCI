@@ -198,6 +198,25 @@
     margin: 0 0 12px;
   }
 
+  /* The study picker. Sized close to the h1 and set in the same serif so
+     it reads as part of the title — "which study" is a heading, not a
+     filter. The orange border only appears on hover and focus; a
+     permanently outlined control here would compete with the tabs. */
+  .dash-title { display: flex; align-items: baseline; gap: 14px; }
+  .dash-title h1 { margin: 0; }
+  #app-select {
+    font-family: Newsreader, Georgia, serif;
+    font-size: 19px;
+    color: #6B665B;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+  #app-select:hover { border-color: #E0DBCE; color: #29261F; }
+  #app-select:focus-visible { outline: 2px solid #C15F3C; outline-offset: 2px; }
+
   /* Top-level navigation. Deliberately an underline rather than the pills
      used inside panels — same shape at two levels would read as the same
      kind of control, when one switches the whole page and the other a chart. */
@@ -1279,7 +1298,14 @@
 <div class="page" id="dashboard-page" hidden>
   <div class="wrap">
     <header>
-      <h1>Selector Flow — Dashboard</h1>
+      <!-- The study picker sits with the title, not in the filter bar.
+           Every filter below narrows one study; this one changes which
+           study you are looking at, and putting it among the others would
+           make swapping cohorts feel like adjusting a date range. -->
+      <div class="dash-title">
+        <h1>Dashboard</h1>
+        <select id="app-select" aria-label="Which study"></select>
+      </div>
       <div style="display:flex; align-items:center; gap:14px;">
         <button class="refresh-btn" id="refresh-btn">Refresh</button>
         <button class="signout-btn" id="signout-btn">Sign out</button>
@@ -1368,12 +1394,9 @@
          carries its headline time so stages stay comparable at a glance. -->
     <div class="panel">
       <h2>By stage</h2>
-      <div class="heatmap-tabs" id="heatmap-tabs">
-        <button class="heatmap-tab active" data-step="number">Number</button>
-        <button class="heatmap-tab" data-step="letter">Letter</button>
-        <button class="heatmap-tab" data-step="shape">Shape</button>
-        <button class="heatmap-tab" data-step="success">Success</button>
-      </div>
+      <!-- Filled from the selected study's screen list. Hard-coded here,
+           these named the shapes app on every study's page. -->
+      <div class="heatmap-tabs" id="heatmap-tabs"></div>
 
       <div class="stage-metrics" id="stage-metrics"></div>
 
@@ -1393,7 +1416,7 @@
         </div>
 
         <div class="heatmap-wrap">
-          <iframe class="heatmap-frame" id="heatmap-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
+          <iframe class="heatmap-frame" id="heatmap-frame" tabindex="-1" title="Screen preview"></iframe>
           <canvas class="heatmap-canvas" id="heatmap-canvas"></canvas>
           <div class="empty-note" id="heatmap-empty" hidden>No clicks recorded yet for this step.</div>
         </div>
@@ -1423,12 +1446,7 @@
           <div class="gaze-controls">
             <div>
               <label for="gaze-step">Screen</label>
-              <select id="gaze-step">
-                <option value="number">Number</option>
-                <option value="letter">Letter</option>
-                <option value="shape">Shape</option>
-                <option value="success">Success</option>
-              </select>
+              <select id="gaze-step"></select>
             </div>
             <div>
               <label for="gaze-mode">View</label>
@@ -1560,6 +1578,56 @@
 </div>
 
 <script>
+  // ------------------------------------------------------------------
+  // Which study this dashboard is currently reading.
+  //
+  // One database holds two studies now, and every cohort query, task list
+  // and mode setting below is scoped by this. A query that forgets it
+  // does not error — it silently returns both studies as one cohort,
+  // which is the only failure mode here that produces plausible-looking
+  // numbers. Each scoped query says so in a comment for that reason.
+  // ------------------------------------------------------------------
+  const APPS = {
+    shapes: {
+      label: 'Selector Flow',
+      file: 'index.html',
+      // The screens a run passes through, in order. The database used to
+      // constrain these with a CHECK; it no longer does, which makes this
+      // the only place the list is written down. The app and the dashboard
+      // agree here or they agree nowhere.
+      steps: ['number', 'letter', 'shape'],
+      // Every screen a click or a gaze point can land on, with the label
+      // the dashboard shows. Wider than `steps`: 'success' is somewhere a
+      // participant looks but never answers on, and leaving it out of the
+      // heatmap would hide what people do once they have finished.
+      screens: [['number', 'Number'], ['letter', 'Letter'],
+                ['shape', 'Shape'], ['success', 'Success']],
+      options: {
+        number: ['1', '2', '3'],
+        letter: ['A', 'B', 'C', 'D'],
+        shape:  ['circle', 'triangle', 'square']
+      }
+    },
+    photo: {
+      label: 'photo',
+      file: 'photo.html',
+      // Filled in when photo.html lands. Empty is the honest placeholder:
+      // the panels that read it render "No data yet" rather than inventing
+      // a screen list, and there are no photo sessions to read yet anyway.
+      steps: [],
+      screens: [],
+      options: {}
+    }
+  };
+
+  const appFile = () => APPS[currentApp].file;
+
+  // Remembered across reloads. Coming back to the dashboard and finding it
+  // silently switched studies would make every number on screen wrong in a
+  // way that looks right.
+  let currentApp = localStorage.getItem('idc_dash_app');
+  if (!APPS[currentApp]) currentApp = 'shapes';
+
   function renderBars(containerId, counts, labels) {
     const container = document.getElementById(containerId);
     const max = Math.max(1, ...labels.map(l => counts[l] || 0));
@@ -1596,12 +1664,11 @@
     return { avg: sum / sorted.length, median, min: sorted[0], max: sorted[sorted.length - 1], count: sorted.length };
   }
 
-  const STEPS = ['number', 'letter', 'shape'];
-  const STEP_OPTIONS = {
-    number: ['1', '2', '3'],
-    letter: ['A', 'B', 'C', 'D'],
-    shape:  ['circle', 'triangle', 'square']
-  };
+  // Not const: these follow the selected study, and are reassigned in the
+  // app-select handler. Nothing closes over them -- every use reads at call
+  // time -- so there is no stale copy to go out of date.
+  let STEPS = APPS[currentApp].steps;
+  let STEP_OPTIONS = APPS[currentApp].options;
 
   const fmtClicks = n => n == null ? '—' : n.toFixed(1);
 
@@ -1752,7 +1819,10 @@
   let allSessions = [];   // everything the date/platform query returned
   let lastData = [];      // the session cohort currently on screen
   let stageData = {};
-  let currentHeatmapStep = 'number';
+  // Set by renderScreenControls() from the selected study's screen list.
+  // Null until then: a default of 'number' was a shapes screen quietly
+  // standing in as the initial state of every study's panel.
+  let currentHeatmapStep = null;
 
   // Reusable multi-select: a summary button that opens a checkbox list.
   // Selection is always explicit (every box ticked = everything shown), so
@@ -1999,7 +2069,7 @@
     if (!btn) return;
     document.querySelectorAll('.heatmap-tab').forEach(b => b.classList.toggle('active', b === btn));
     currentHeatmapStep = btn.dataset.step;
-    document.getElementById('heatmap-frame').src = `index.html?previewStep=${currentHeatmapStep}`;
+    document.getElementById('heatmap-frame').src = `${appFile()}?previewStep=${currentHeatmapStep}`;
     renderStage();
   });
 
@@ -2011,8 +2081,31 @@
   // this page describes, so it is counted and stated rather than assumed.
   // =====================================================================
 
-  let currentGazeStep = 'number';
+  let currentGazeStep = null;
   let currentGazeMode = 'heat';
+
+  // Both screen pickers, and the preview frames behind them, are built from
+  // the selected study's screen list rather than written into the markup.
+  // Called on load and on every study switch.
+  function renderScreenControls() {
+    const screens = APPS[currentApp].screens;
+    currentHeatmapStep = screens.length ? screens[0][0] : null;
+    currentGazeStep = currentHeatmapStep;
+
+    document.getElementById('heatmap-tabs').innerHTML = screens
+      .map(([id, label], i) =>
+        `<button class="heatmap-tab${i === 0 ? ' active' : ''}" data-step="${id}">${label}</button>`).join('');
+    document.getElementById('gaze-step').innerHTML = screens
+      .map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+
+    // A study with no screen list yet has nothing to preview. Pointing the
+    // frames at the app regardless would draw its first screen under a
+    // panel that has no data for it — an empty heatmap over a real screen
+    // reads as "nobody clicked here", not as "this study isn't built yet".
+    const src = currentHeatmapStep ? `${appFile()}?previewStep=${currentHeatmapStep}` : 'about:blank';
+    document.getElementById('heatmap-frame').src = src;
+    document.getElementById('gaze-frame').src = src;
+  }
 
   function gazeCohort(sessions) {
     const by = st => sessions.filter(s => s.gaze_state === st);
@@ -2321,6 +2414,9 @@
             + ' selections(step, value, duration_ms, created_at, task_id),'
             + ' clicks(step, x, y, seq, hit, task_id),'
             + ' gaze(step, x, y, t_ms, dur_ms, task_id)')
+      // Scoped to one study: without this the two apps' runs arrive as one
+      // cohort and every average below is computed across both.
+      .eq('app', currentApp)
       .order('started_at', { ascending: false })
       .limit(5000);
     if (taskFilter.from) q = q.gte('started_at', `${taskFilter.from}T00:00:00.000Z`);
@@ -2501,12 +2597,12 @@
           <b>${m.label}</b><span>${m.blurb}</span>
         </button>`).join('');
     document.getElementById('app-link').textContent =
-      new URL('index.html', location.href).href;
+      new URL(APPS[currentApp].file, location.href).href;
   }
 
   async function loadStudyMode() {
     const { data, error } = await supabaseClient
-      .from('study_settings').select('mode').eq('id', 1).maybeSingle();
+      .from('study_settings').select('mode').eq('app', currentApp).maybeSingle();
     if (!error && data) studyMode = data.mode || 'tasks';
     renderModePicker();
   }
@@ -2528,7 +2624,8 @@
     studyMode = wanted;
     renderModePicker();
     const { error } = await supabaseClient
-      .from('study_settings').update({ mode: wanted, updated_at: new Date().toISOString() }).eq('id', 1);
+      .from('study_settings').update({ mode: wanted, updated_at: new Date().toISOString() })
+      .eq('app', currentApp);
     if (error) {
       studyMode = prev;
       renderModePicker();
@@ -2731,7 +2828,7 @@
           </div>
           <div id="${id}-stats">${taskStepPanel(t.task_id, STEPS[0])}</div>
           <div class="tr-heat-wrap">
-            <iframe id="${id}-frame" src="index.html?previewStep=number" tabindex="-1" title="Screen preview"></iframe>
+            <iframe id="${id}-frame" src="${appFile()}?previewStep=${STEPS[0] || ''}" tabindex="-1" title="Screen preview"></iframe>
             <canvas id="${id}-canvas"></canvas>
           </div>
           <div class="tr-heat-legend" id="${id}-legend"></div>
@@ -2835,7 +2932,7 @@
              data-step="${st}" data-layer="${layer}">
           <div class="tr-mini-label">${st}</div>
           <div class="tr-mini-wrap">
-            <iframe id="${id}-frame" src="index.html?previewStep=${st}" tabindex="-1" title="${st} screen"></iframe>
+            <iframe id="${id}-frame" src="${appFile()}?previewStep=${st}" tabindex="-1" title="${st} screen"></iframe>
             <canvas id="${id}-canvas"></canvas>
           </div>
           <div class="tr-mini-note" id="${id}-legend"></div>
@@ -2891,7 +2988,7 @@
           // than no panel at all.
           paintStats();
           // Changing the screen reloads the preview, whose load redraws.
-          frame.src = `index.html?previewStep=${step.dataset.heatStep}`;
+          frame.src = `${appFile()}?previewStep=${step.dataset.heatStep}`;
           return;
         }
         const layer = e.target.closest('[data-heat-layer]');
@@ -3241,7 +3338,7 @@
     if (!e.currentTarget.open) return;
     const frame = document.getElementById('gaze-frame');
     if (!frame.getAttribute('src')) {
-      frame.src = `index.html?previewStep=${currentGazeStep}`;
+      frame.src = `${appFile()}?previewStep=${currentGazeStep}`;
     }
     renderGaze();
   });
@@ -3251,7 +3348,7 @@
 
   document.getElementById('gaze-step').addEventListener('change', (e) => {
     currentGazeStep = e.target.value;
-    document.getElementById('gaze-frame').src = `index.html?previewStep=${currentGazeStep}`;
+    document.getElementById('gaze-frame').src = `${appFile()}?previewStep=${currentGazeStep}`;
     rebuildGazeSessions(lastData);
     renderGaze();
   });
@@ -3290,6 +3387,8 @@
       // every recent run — the dashboard would look like data stopped
       // arriving, which is the one failure you'd never think to check.
       .order('started_at', { ascending: false })
+      // Scoped to one study, for the same reason as the task cohort above.
+      .eq('app', currentApp)
       .limit(5000);
 
     if (fromVal) query = query.gte('started_at', `${fromVal}T00:00:00.000Z`);
@@ -3576,7 +3675,7 @@
       document.getElementById('form-app_route').hidden = false;
       document.getElementById('route-kind-label').textContent = 'New task — Route through the app';
       // Reload so the demonstration starts from step one.
-      document.getElementById('author-frame').src = `index.html?authorMode=1&t=${Date.now()}`;
+      document.getElementById('author-frame').src = `${appFile()}?authorMode=1&t=${Date.now()}`;
     } else {
       renderQuestionForm(authoringKind);
       document.getElementById('form-question').hidden = false;
@@ -3707,7 +3806,7 @@
         <div class="q-preview">
           <div class="q-preview-label">What participants see</div>
           <div class="q-preview-stage">
-            <iframe id="q-preview-frame" src="index.html?previewQuestion=1"
+            <iframe id="q-preview-frame" src="${appFile()}?previewQuestion=1"
                     title="Question preview" tabindex="-1"></iframe>
           </div>
         </div>
@@ -3907,6 +4006,7 @@
     btn.disabled = true;
     const { error } = await supabaseClient.from('tasks').insert({
       task_id: crypto.randomUUID(),
+      app: currentApp,
       kind: authoringKind,
       name,
       goal_text: question,
@@ -3973,7 +4073,7 @@
     const btn = document.getElementById('save-task-btn');
     btn.disabled = true;
     const { error } = await supabaseClient.from('tasks').insert({
-      task_id: crypto.randomUUID(), name, goal_text: goal, kind: 'app_route',
+      task_id: crypto.randomUUID(), app: currentApp, name, goal_text: goal, kind: 'app_route',
       path: authoredPath.map(({ step, value }) => ({ step, value })),
       binding, position: nextPosition()
     });
@@ -3987,7 +4087,10 @@
   async function loadTasks() {
     const list = document.getElementById('task-list');
     const { data, error } = await supabaseClient
-      .from('tasks').select('*').order('created_at', { ascending: false });
+      // Scoped: a battery belongs to one app, and mixing them would offer
+      // a route through the shapes selector as a task in the photo study.
+      .from('tasks').select('*').eq('app', currentApp)
+      .order('created_at', { ascending: false });
 
     if (error) {
       list.innerHTML = `<div class="error-box">Couldn't load tasks: ${error.message}</div>`;
@@ -4285,11 +4388,45 @@
   function showDashboard() {
     document.getElementById('login-page').hidden = true;
     document.getElementById('dashboard-page').hidden = false;
+    const sel = document.getElementById('app-select');
+    sel.innerHTML = Object.entries(APPS)
+      .map(([k, a]) => `<option value="${k}">${a.label}</option>`).join('');
+    sel.value = currentApp;
+    renderScreenControls();
     applyDefaultRange();
     loadDashboard();
     loadTasks();
     loadStudyMode();
   }
+
+  // Switching studies reloads everything rather than filtering in place.
+  // taskSessions is a cache that several panels read without re-fetching
+  // (`if (!taskSessions.length) await loadTaskCohort()`), so leaving it
+  // populated would show the previous study's runs under the new one's
+  // name — right up until something happened to trigger a reload.
+  document.getElementById('app-select').addEventListener('change', async (e) => {
+    if (!APPS[e.target.value]) return;
+    currentApp = e.target.value;
+    localStorage.setItem('idc_dash_app', currentApp);
+
+    // Everything below names something in the study we just left: a set of
+    // runs, a chosen subset of those runs, and a task being read. Carried
+    // over, each one would be silently reinterpreted against the new study.
+    taskSessions = [];
+    taskFilter.sessions = null;
+    resultsTaskId = null;
+    STEPS = APPS[currentApp].steps;
+    STEP_OPTIONS = APPS[currentApp].options;
+    renderScreenControls();
+
+    await Promise.all([loadDashboard(), loadTasks(), loadStudyMode()]);
+
+    // Repaint whatever is on screen. Without this the switch only takes
+    // effect on the next tab change, so the panel you are looking at keeps
+    // showing the old study's numbers under the new study's name.
+    const active = document.querySelector('.main-tab.active');
+    if (active) switchTo(active.dataset.view);
+  });
 
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();

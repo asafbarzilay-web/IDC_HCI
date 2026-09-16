@@ -777,6 +777,13 @@
   // All three are observation, not participation — none may write.
   const TRACKING_OFF = PREVIEW_MODE || AUTHOR_MODE || QUESTION_PREVIEW;
 
+  // Which app this file is. One database now holds two studies, and every
+  // row this file writes and every setting it reads is scoped by this.
+  // Stated explicitly rather than relying on the column default, so that
+  // the default can eventually be dropped and a missing `app` becomes a
+  // failed insert instead of a row quietly filed under the wrong study.
+  const APP = 'shapes';
+
   function reportToAuthor(type, payload) {
     if (!AUTHOR_MODE || window.parent === window) return;
     // Same-origin only: the dashboard serves this frame, so there is no
@@ -852,7 +859,7 @@
   function startSession(isRestart) {
     if (TRACKING_OFF || !supabaseClient) return Promise.resolve();
     return supabaseClient.from('sessions')
-      .insert({ session_id: sessionId, user_id: userId, platform, is_restart: isRestart,
+      .insert({ session_id: sessionId, user_id: userId, app: APP, platform, is_restart: isRestart,
                 gaze_state: gazeState, study_mode: studyMode })
       .then(({ error }) => { if (error) console.error('startSession failed', error); })
       .catch(err => console.error('startSession failed', err));
@@ -1698,7 +1705,7 @@
     if (TRACKING_OFF || !supabaseClient) return 'tasks';
     try {
       const { data, error } = await supabaseClient
-        .from('study_settings').select('mode').eq('id', 1).maybeSingle();
+        .from('study_settings').select('mode').eq('app', APP).maybeSingle();
       if (error || !data) return 'tasks';
       return data.mode || 'tasks';
     } catch { return 'tasks'; }
@@ -1710,6 +1717,9 @@
       const { data, error } = await supabaseClient
         .from('tasks')
         .select('task_id, kind, name, goal_text, config, path, binding, position')
+        // Without this the two studies' batteries interleave by position
+        // and a participant is handed a route through an app they cannot see.
+        .eq('app', APP)
         .not('position', 'is', null)
         // Belt and braces: hiding already takes a task out of the list the
         // dashboard can sequence, but a hidden task must never reach a
