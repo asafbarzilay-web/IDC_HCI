@@ -402,20 +402,52 @@
     width: var(--w); margin: 0 auto 14px; color: #F2EFE6;
     font-family: Roboto, sans-serif;
   }
-  .prompt .step { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.65; }
-  .prompt .goal { font-size: 15px; line-height: 21px; margin-top: 6px; }
-  .prompt .give-up {
+  /* The battery's progress rail. study-core.js writes the markup; these
+     are the only rules it needs, and they are here rather than in the core
+     because a rail belongs to the app's layout, not to the questions. */
+  .progress-rail { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .progress-dot { height: 5px; width: 10px; border-radius: 3px; background: #4A4844; transition: all 0.3s ease; }
+  .progress-dot.active { width: 24px; background: #F2EFE6; }
+  .progress-spacer { flex: 1; }
+  .progress-label { font-size: 12px; color: #9A958C; }
+
+  .task-goal .step { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.65; }
+  .task-goal .goal { font-size: 15px; line-height: 21px; margin-top: 6px; }
+  .task-goal .give-up {
     margin-top: 10px; background: none; border: 0; color: #C9A227;
     font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0;
   }
-  .prompt .retry { margin-top: 8px; font-size: 13px; color: #E88B6A; }
+  .task-goal .retry { margin-top: 8px; font-size: 13px; color: #E88B6A; }
+
+  /* The question types are styled by study-core.js. Its palette defaults to
+     the shapes app's cream; this app is black on white, so it restates the
+     variables rather than the rules. */
+  :root {
+    --task-accent: #000000;
+    --task-accent-hover: #666666;
+    --task-accent-soft: #F1F1F1;
+    --task-accent-line: #DDDDDD;
+    --task-warn: #C4342A;
+    --task-surface: #FFFFFF;
+    --task-surface-hi: #FFFFFF;
+    --task-line: #DDDDDD;
+    --task-line-soft: #E8E8E8;
+    --task-ink: #000000;
+    --task-ink-2: #333333;
+    --task-ink-3: #555555;
+    --task-muted: #8A8A8A;
+    --task-muted-2: #8A8A8A;
+  }
 </style>
 </head>
 <body>
 
 <div class="stage">
   <div>
-    <div class="prompt" id="prompt" hidden></div>
+    <div class="prompt" id="prompt" hidden>
+      <div class="progress-rail" id="progress-rail"></div>
+      <div class="task-goal" id="task-goal"></div>
+    </div>
 
     <!-- The measured box. Everything a participant can touch is inside it. -->
     <div class="phone" id="phone">
@@ -593,7 +625,7 @@
     // instead would be worse than the problem: the tab bar and status bar
     // do not scroll, so their clicks would move around under a fixed
     // finger.
-    onAppScreen: () => !inQuestion(),
+    onAppScreen: () => !inQuestionMode,
     overlayActive: () => false,
     // 'none' is the mis-click bucket, so everything a participant can
     // deliberately aim at has to be named here. Dismissing an overlay and
@@ -612,18 +644,60 @@
                 : 'none',
     taskId: () => null,
     gazeState: () => null,
-    studyMode: () => studyMode
+    studyMode: () => Study.studyMode,
+
+    // ---- the task battery ------------------------------------------
+    slots: {
+      // The prompt sits above the phone; a question replaces what is
+      // inside it, the same way a question replaces the selector.
+      progress: () => document.getElementById('progress-rail'),
+      question: () => document.getElementById('screen')
+    },
+
+    // A fresh attempt starts logged out, which is where a participant
+    // handed "find the surfing dog" should begin.
+    resetApp: () => {
+      screen = 'logged_out';
+      overlay = null;
+      chatWith = null;
+      searchText = '';
+      stepEnteredAt = Date.now();
+      render();
+    },
+
+    // The phone's own chrome belongs to the app, not to a question drawn
+    // inside it: a tab bar under a survey question would navigate away
+    // from the question.
+    chrome: (mode) => {
+      inQuestionMode = mode !== 'app';
+      document.getElementById('tabbar').hidden = inQuestionMode || !TABBED.has(screen);
+      document.getElementById('navbar').hidden = inQuestionMode || !NAV_TITLE[screen];
+      document.getElementById('overlay').hidden = inQuestionMode || !overlay;
+    },
+
+    // Deliberately false. This app's screens are a graph — the tab bar
+    // reaches anything from anywhere — so there is no moment at which an
+    // attempt has run out of road. A participant keeps going until they
+    // match the route or say they cannot, which is why the prompt always
+    // carries a way out.
+    attemptExhausted: () => false,
+    onRetry: () => {},
+
+    // Nothing to shut down: this app never opens the camera, and a button
+    // saying "camera off" would be telling a participant about hardware
+    // that was never on.
+    onFinish: async () => 'Thanks'
   });
 
   const PREVIEW = Study.PREVIEW_MODE ? Study.PREVIEW_STEP : null;
   const TRACKING_OFF = Study.TRACKING_OFF;
   const write = Study.write;
 
-  // The task battery has not moved out of index.html yet, so this app
-  // runs free-play only for now. Stated rather than left undefined: the
-  // session records the mode it actually ran under.
-  let studyMode = 'free';
-  const inQuestion = () => false;
+  // True while a question is drawn inside the phone. Clicks there are not
+  // app behaviour: without this they would be logged against whichever
+  // screen the app still thinks it is on, every one scoring as a mis-click
+  // on a screen the participant never saw.
+  let inQuestionMode = false;
 
   // =====================================================================
   // Rendering
@@ -823,7 +897,26 @@
                  + `<span>${esc(spec.title)}</span>`;
   }
 
+  // The prompt lives outside the phone on purpose. Drawn inside it, the
+  // banner would cover the screen being measured and its own clicks would
+  // land in that screen's heatmap.
+  function renderPrompt() {
+    const wrap = document.getElementById('prompt');
+    const goal = document.getElementById('task-goal');
+    const t = Study.currentTask();
+    const active = t && t.kind === 'app_route';
+    wrap.hidden = !Study.inBattery();
+    goal.innerHTML = active ? `
+      <div class="step">Your task</div>
+      <div class="goal">${Study.escapeHtml(t.goal_text)}</div>
+      ${Study.routeRetry ? '<div class="retry">Not the one we asked for — keep looking.</div>' : ''}
+      <button class="give-up" id="giveup-btn">I can't find it — move on</button>` : '';
+    const g = document.getElementById('giveup-btn');
+    if (g) g.addEventListener('click', () => Study.giveUp());
+  }
+
   function render() {
+    renderPrompt();
     document.getElementById('phone').classList.toggle('bleed', BLEED.has(screen));
     const host = document.getElementById('screen');
     host.innerHTML = (SCREEN_BODY[screen] || SCREEN_BODY.discover)();
@@ -856,19 +949,17 @@
   // writes, which is why the dashboard's route scoring works here without
   // knowing anything about photographs.
   // =====================================================================
+  // Returns true when the battery already changed what is on screen —
+  // finished the task, or moved to the next one. The caller must not then
+  // render the app over it.
   function record(value) {
-    reportToAuthor('choice', { step: screen, value });
-    write('selections', {
-      step: screen,
-      value,
-      duration_ms: Date.now() - stepEnteredAt,
-      task_id: null
-    });
+    return Study.choice(screen, value, Date.now() - stepEnteredAt);
   }
 
   function go(next, value) {
     if (!SCREENS.includes(next)) return;
-    record(value != null ? value : next);
+    const handled = record(value != null ? value : next);
+    if (handled) return;
     screen = next;
     overlay = null;
     stepEnteredAt = Date.now();
@@ -880,12 +971,15 @@
     openPhoto = photo || null;
     // Not a screen change, so the clock on `screen` keeps running: opening
     // a photo is time spent on the screen you opened it from.
-    record(`open:${photo || kind}`);
+    //
+    // Opening a photo is very often the goal of a route task, so this is
+    // one of the places the route can complete.
+    if (record(`open:${photo || kind}`)) return;
     renderOverlay();
   }
 
   function closeOverlay() {
-    record(`close:${openPhoto || overlay}`);
+    if (record(`close:${openPhoto || overlay}`)) return;
     overlay = null;
     openPhoto = null;
     renderOverlay();
@@ -973,9 +1067,24 @@
   render();
 
   if (!TRACKING_OFF) {
-    // Paint first, then open the session — the app must appear even if
-    // analytics is unavailable.
-    Study.begin(false);
+    // Paint first, then start — the app must appear even if analytics is
+    // unavailable. startStudy reads the mode, opens the session and loads
+    // the battery in the order each depends on the one before.
+    (async () => {
+      const { offer } = await Study.startStudy();
+      // free_then_tasks: they explore first and start when they say so.
+      // Rendered as a control on the prompt rather than inside the phone,
+      // for the same reason the task banner is.
+      if (offer) {
+        const wrap = document.getElementById('prompt');
+        wrap.hidden = false;
+        document.getElementById('task-goal').innerHTML =
+          '<button class="give-up" id="start-tasks">Start the tasks →</button>';
+        document.getElementById('start-tasks').addEventListener('click', () => {
+          Study.beginTasks();
+        });
+      }
+    })();
   }
 </script>
 </body>

@@ -1634,9 +1634,7 @@
     photo: {
       label: 'photo',
       file: 'photo.html',
-      // Not yet: the battery still lives in index.html. Flip this the
-      // moment photo.html can read a mode and run a task.
-      runsTasks: false,
+      runsTasks: true,
       // Must match SCREENS in photo.html. The database no longer
       // constrains `step`, so these two lists agree here or nowhere.
       steps: ['logged_out', 'login', 'register_1', 'register_2',
