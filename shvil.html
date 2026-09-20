@@ -205,8 +205,20 @@
   .w-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .w-card { background: #fff; border: 1px solid var(--border); border-radius: 18px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
   .w-card .cover { position: relative; height: 118px; background: linear-gradient(160deg,#2E2559,#6B4E8C 45%,#E2603F); }
-  .w-card .cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .92; }
-  .w-card .cover .shade { position: absolute; inset: 0; background: linear-gradient(180deg,rgba(11,29,58,0) 40%,rgba(11,29,58,.72)); }
+  /* Direct-child combinator, not descendant: `.who .avatar img` (the
+     walker's small face photo) is also nested inside `.cover`, several
+     levels down. A descendant selector here matched it too, forcing
+     `position:absolute;inset:0` on a 44px avatar photo — which escapes
+     its non-positioned parent and fills the whole 118px cover box
+     instead, painting over the scrim at 92% opacity. That was the real
+     cause of the washed-out card photos, not the scrim's own opacity. */
+  .w-card .cover > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .92; }
+  /* Scrim under the walker's name/avatar so it reads over a busy photo.
+     The name block starts at ~54% down this 118px card (see .who below);
+     the gradient has to be solidly dark well before that point, not just
+     by the last pixel — a straight 40%->100% ramp (the taller original
+     design's numbers) leaves the text over near-transparent scrim here. */
+  .w-card .cover .shade { position: absolute; inset: 0; background: linear-gradient(180deg,rgba(11,29,58,0) 15%,rgba(11,29,58,.86) 52%); }
   .w-card .instant { position: absolute; top: 10px; left: 10px; }
   .w-card .rate-badge { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,.95); color: var(--ink); font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; }
   .w-card .who { position: absolute; left: 12px; bottom: 10px; right: 12px; display: flex; align-items: flex-end; gap: 9px; }
