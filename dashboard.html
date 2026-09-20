@@ -1656,6 +1656,42 @@
       // Left empty rather than filled with a guess at every photo id --
       // the panels that read it fall back to the values actually recorded.
       options: {}
+    },
+    shvil: {
+      label: 'Shvil',
+      file: 'shvil.html',
+      runsTasks: true,
+      // Must match SCREENS in shvil.html. Graph-shaped like photo — a
+      // persistent header reaches Explore/Walks/Messages/Account from
+      // anywhere — with two funnels embedded in it: onboarding and the
+      // walker -> book -> checkout -> confirmed -> live -> recap -> rate
+      // booking flow. The stage panel below still treats this list as a
+      // funnel, the same known imprecision photo.html already accepts.
+      steps: ['welcome', 'signup', 'login', 'dogsetup', 'explore', 'walker',
+              'book', 'checkout', 'confirmed', 'live', 'recap', 'rate',
+              'chat', 'bookings', 'account'],
+      screens: [
+        ['welcome',   'Welcome'],
+        ['signup',    'Sign up'],
+        ['login',     'Log in'],
+        ['dogsetup',  'Dog setup'],
+        ['explore',   'Explore'],
+        ['walker',    'Walker profile'],
+        ['book',      'Book'],
+        ['checkout',  'Checkout'],
+        ['confirmed', 'Confirmed'],
+        ['live',      'Live tracking'],
+        ['recap',     'Recap'],
+        ['rate',      'Rate & tip'],
+        ['chat',      'Messages'],
+        ['bookings',  'Your walks'],
+        ['account',   'Account']
+      ],
+      // Like photo, choices here are heterogeneous rather than drawn from
+      // one small fixed set per screen (a walker card open, a filter
+      // toggle and a day pick can all happen on 'explore') — left empty so
+      // the panels fall back to the values actually recorded.
+      options: {}
     }
   };
 

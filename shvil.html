@@ -1,0 +1,1411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shvil</title>
+
+<!--
+  Shvil: the third participant-facing study in this repo, built from a
+  Claude Design handoff (dog-walker-matchmaking-app / Shvil.dc.html).
+
+  The prototype is a real, fluid website (clamp()/vw sizing, a
+  content column that grows with the viewport). That is exactly the
+  property a study app cannot have: two participants on different
+  screens would have their clicks measured against different-sized
+  boxes, and the heatmaps would not be comparable. So this recreation
+  fixes one frame size (1180x760) and turns every clamp()/vw rule into
+  a constant tuned for that frame, the same trade photo.html made for
+  a phone. Colours, type and layout are otherwise kept faithful to the
+  handoff.
+
+  Graph-shaped, like photo.html: a persistent header (Explore / Walks
+  / Messages / Account) reaches every authed screen, so there is no
+  "last step" and attemptExhausted stays false. Two funnels are
+  embedded in the graph rather than being the whole app: onboarding
+  (welcome -> signup/login -> dogsetup -> explore) and a booking flow
+  (walker -> book -> checkout -> confirmed -> live -> recap -> rate).
+
+  No overlay layer: unlike photo's photo-viewer, every screen here
+  fully replaces the frame's content, so `overlay` stays null always.
+
+  Instrumentation lives in study-core.js, shared with index.html and
+  photo.html.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --w: 1180px;       /* frame width — the measured box, fixed for every participant */
+    --h: 760px;        /* frame height */
+    --header: 64px;
+    --bg: #FFF6ED;
+    --ink: #0B1D3A;
+    --accent: #CE3A15;
+    --accent-hover: #B02F0F;
+    --muted: #6E6155;
+    --label: #8A7B6C;
+    --border: #F0E2D4;
+    --border2: #EEDFCF;
+    --field: #FFFCF8;
+    --soft: #FFF3EA;
+    --soft-border: #FFD9C0;
+    --green-bg: #E3F3E8;
+    --green: #1B5E3A;
+    --blue-bg: #EDF3F9;
+    --slate: #43566F;
+    --gold: #E09400;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  /* `display: flex` on an element outranks the [hidden] attribute's own
+     `display: none`, so a hidden flex element keeps its box and keeps
+     taking space — the same trap noted in photo.html. */
+  [hidden] { display: none !important; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #2A2118;
+    font-family: 'Instrument Sans', system-ui, sans-serif;
+    color: var(--ink);
+  }
+
+  .stage { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px 0; }
+
+  /* Embedded in one of the dashboard's preview frames, scaled to fit
+     rather than clipped — see photo.html for why. Participants never
+     get this; their frame stays 1:1 so every target is physically the
+     size the design intends. */
+  .stage.fit { position: relative; display: block; padding: 0; height: 100vh; }
+  .stage.fit > div { position: static; }
+  .stage.fit .frame { position: absolute; transform-origin: top left; box-shadow: none; }
+
+  /* The measured box. Study.configure() points at this. */
+  .frame {
+    position: relative;
+    width: var(--w);
+    height: var(--h);
+    background: var(--bg);
+    overflow: hidden;
+    border-radius: 18px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  input, textarea, button, select { font-family: inherit; font-size: inherit; }
+  ::placeholder { color: #A99A8B; }
+  @keyframes ping { 0% { transform: scale(1); opacity: .5; } 70% { transform: scale(2.6); opacity: 0; } 100% { opacity: 0; } }
+
+  /* --- header --------------------------------------------------------- */
+  .header {
+    flex: 0 0 var(--header); height: var(--header);
+    display: flex; align-items: center; gap: 18px; padding: 0 24px;
+    background: rgba(255,246,237,.94); border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+  .brand .dot { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 50% 38%,#FFE9A8,#FFB020 42%,#F4623A 78%,#CE3A15); }
+  .brand .name { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -.02em; }
+  .loc-chip { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: #fff; border: 1px solid var(--border2); font-size: 12.5px; font-weight: 600; color: var(--slate); }
+  .loc-chip .b { width: 6px; height: 6px; border-radius: 50%; background: #1E6FA8; }
+  .navrow { display: flex; gap: 4px; margin-left: auto; }
+  .navlink { padding: 8px 14px; border-radius: 999px; border: none; cursor: pointer; font-size: 13.5px; font-weight: 600; background: transparent; color: var(--slate); }
+  .navlink[aria-current="true"] { background: var(--ink); color: #fff; }
+  .avatar-btn { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(11,29,58,.18); cursor: pointer; flex: 0 0 auto; background: #1E6FA8; }
+  .avatar-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* --- body / scroll -------------------------------------------------- */
+  .body { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+  .col { max-width: 1080px; margin: 0 auto; padding: 26px 24px 60px; }
+  .col-narrow { max-width: 760px; }
+  .col-tight { max-width: 480px; }
+
+  h1, h2, h3 { font-family: 'Outfit', sans-serif; letter-spacing: -.02em; margin: 0; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
+  .muted { color: var(--muted); }
+  .label { display: block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--label); margin-bottom: 6px; }
+  .field { width: 100%; padding: 12px 14px; border: 1.5px solid #EADCCB; border-radius: 12px; background: var(--field); font-size: 14.5px; color: var(--ink); }
+  textarea.field { resize: vertical; line-height: 1.5; }
+
+  .btn { border: none; border-radius: 999px; padding: 13px 20px; font-weight: 700; font-size: 14.5px; cursor: pointer; background: #fff; color: var(--ink); border: 1.5px solid var(--border2); }
+  .btn.primary { background: var(--accent); color: #fff; border: none; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.block { width: 100%; }
+  .btn.ghost { background: none; border: none; color: var(--muted); font-weight: 600; text-decoration: underline; }
+  .back-link { background: none; border: none; color: var(--muted); font-weight: 600; font-size: 13px; cursor: pointer; padding: 5px 0; margin-bottom: 10px; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1.5px solid var(--border2); background: #fff; color: var(--slate); }
+  .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .box-opt { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 8px; border-radius: 12px; cursor: pointer; border: 1.5px solid var(--border2); background: #fff; }
+  .box-opt.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .box-opt.off { background: #F7EFE5; color: #BDAE9E; border-color: var(--border); cursor: not-allowed; }
+
+  .badge-green { font-size: 11px; font-weight: 700; color: var(--green); background: var(--green-bg); padding: 4px 9px; border-radius: 999px; }
+  .badge-blue { font-size: 11px; font-weight: 700; color: var(--slate); background: var(--blue-bg); padding: 4px 9px; border-radius: 999px; }
+  .badge-gold { font-size: 11px; font-weight: 800; color: var(--ink); background: #FFB020; padding: 4px 9px; border-radius: 999px; }
+  .star-ink { color: var(--gold); }
+
+  .avatar { border-radius: 50%; overflow: hidden; background: #1E6FA8; flex: 0 0 auto; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* --- welcome ---------------------------------------------------------- */
+  .welcome { display: flex; height: 100%; }
+  .welcome-art { flex: 0 0 46%; position: relative; overflow: hidden; background: linear-gradient(172deg,#2E2559 0%,#5C4288 24%,#A9558C 46%,#E2603F 66%,#FFB43A 100%); display: flex; flex-direction: column; justify-content: flex-end; padding: 36px; }
+  .welcome-art .sun { position: absolute; left: 50%; top: 24%; transform: translate(-50%,-50%); width: 170px; height: 170px; border-radius: 50%; background: radial-gradient(circle at 50% 40%,#FFF6D6,#FFD166 40%,#FFA82E 72%,#F4623A); box-shadow: 0 0 100px 30px rgba(255,176,32,.45); }
+  .welcome-art .hz { position: absolute; left: 0; right: 0; bottom: 0; height: 42%; background: linear-gradient(180deg,rgba(30,111,168,.55),#123B6B 40%,#0B1D3A); }
+  .welcome-art .kicker { position: relative; z-index: 2; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700; color: #FFD9B8; }
+  .welcome-art h1 { position: relative; z-index: 2; color: #fff; font-size: 38px; line-height: 1.05; font-weight: 800; margin-top: 12px; }
+  .welcome-art p { position: relative; z-index: 2; color: #FFE7D3; font-size: 15px; max-width: 34ch; margin: 14px 0 0; line-height: 1.5; }
+  .welcome-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; }
+  .welcome-panel .inner { width: 100%; max-width: 380px; }
+  .faces { display: flex; align-items: center; margin-bottom: 18px; }
+  .faces .avatar { width: 34px; height: 34px; border: 2.5px solid var(--bg); margin-left: -10px; }
+  .faces .avatar:first-child { margin-left: 0; }
+  .faces .n { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 12px; }
+  .proof { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 20px; }
+  .proof .item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--slate); }
+  .proof .item .ok { width: 16px; height: 16px; border-radius: 50%; background: #FFEFD6; color: var(--accent); display: grid; place-items: center; font-size: 10px; font-weight: 800; }
+
+  /* --- auth / dogsetup ---------------------------------------------------- */
+  .center-page { display: flex; align-items: flex-start; justify-content: center; padding: 34px 24px; }
+  .auth-card { width: 100%; max-width: 400px; background: #fff; border: 1px solid var(--border); border-radius: 22px; padding: 28px; box-shadow: 0 20px 50px -36px rgba(11,29,58,.5); }
+  .auth-card .dot { width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 50% 38%,#FFE9A8,#FFB020 42%,#F4623A 78%,#CE3A15); margin-bottom: 14px; }
+  .divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; }
+  .divider .line { flex: 1; height: 1px; background: var(--border); }
+  .divider span { font-size: 11px; color: #A99A8B; font-weight: 600; }
+  .field + .field { margin-top: 12px; }
+
+  .setup-steps { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .setup-steps .bar { height: 4px; flex: 1; border-radius: 2px; background: var(--border2); }
+  .setup-steps .bar.on { background: var(--accent); }
+  .setup-steps .n { font-size: 11px; font-weight: 700; color: var(--label); letter-spacing: .08em; }
+  .dogsetup-card { width: 100%; max-width: 560px; background: #fff; border: 1px solid var(--border); border-radius: 22px; padding: 26px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* --- explore ------------------------------------------------------------ */
+  .explore-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; margin-bottom: 18px; }
+  .kicker { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--accent); }
+  .viewtabs { display: flex; gap: 4px; background: #F6E7D8; padding: 4px; border-radius: 999px; }
+  .viewtabs button { padding: 8px 18px; border-radius: 999px; border: none; cursor: pointer; font-size: 12.5px; font-weight: 700; background: transparent; color: #8A7B6C; }
+  .viewtabs button[aria-current="true"] { background: #fff; color: var(--ink); }
+  .search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .search-box { flex: 1 1 240px; display: flex; align-items: center; gap: 9px; background: #fff; border: 1.5px solid var(--border2); border-radius: 999px; padding: 10px 15px; }
+  .search-box input { flex: 1; border: none; background: transparent; font-size: 13.5px; color: var(--ink); outline: none; }
+  .result-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; font-size: 13px; }
+  .sorts { display: flex; gap: 5px; align-items: center; }
+  .sorts button { padding: 6px 11px; border-radius: 999px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: #F6E7D8; color: var(--muted); }
+  .sorts button[aria-current="true"] { background: var(--ink); color: #fff; }
+
+  .w-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .w-card { background: #fff; border: 1px solid var(--border); border-radius: 18px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
+  .w-card .cover { position: relative; height: 118px; background: linear-gradient(160deg,#2E2559,#6B4E8C 45%,#E2603F); }
+  .w-card .cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .92; }
+  .w-card .cover .shade { position: absolute; inset: 0; background: linear-gradient(180deg,rgba(11,29,58,0) 40%,rgba(11,29,58,.72)); }
+  .w-card .instant { position: absolute; top: 10px; left: 10px; }
+  .w-card .rate-badge { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,.95); color: var(--ink); font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; }
+  .w-card .who { position: absolute; left: 12px; bottom: 10px; right: 12px; display: flex; align-items: flex-end; gap: 9px; }
+  .w-card .who .avatar { width: 44px; height: 44px; border: 2px solid #fff; }
+  .w-card .who .name { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 15.5px; color: #fff; }
+  .w-card .who .sub { font-size: 11.5px; color: #FFE0C6; font-weight: 500; }
+  .w-card .body { padding: 12px 13px 13px; display: flex; flex-direction: column; flex: 1; }
+  .w-card .badges { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+  .w-card .short { font-size: 12.5px; line-height: 1.45; color: var(--slate); margin: 0 0 10px; flex: 1; }
+  .w-card .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 11px; }
+  .w-card .tags span { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border2); padding: 3px 8px; border-radius: 7px; }
+  .w-card .foot { display: flex; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid #F4E8DB; }
+  .w-card .price { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 18px; }
+  .w-card .price small { font-size: 11px; color: var(--label); font-weight: 600; }
+  .w-card .foot .btns { display: flex; gap: 6px; }
+  .w-card .foot .btn { padding: 8px 12px; font-size: 12.5px; }
+
+  .explore-map { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+  .map-box { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--border2); background: #F7EEE0; height: 420px; }
+  .map-shore { position: absolute; left: 0; top: 0; bottom: 0; width: 26%; background: linear-gradient(100deg,#0B1D3A,#1E6FA8 55%,#3FA0D8); }
+  .map-pin { position: absolute; transform: translate(-50%,-100%); cursor: pointer; font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 12px; padding: 6px 10px; border-radius: 999px; white-space: nowrap; box-shadow: 0 6px 14px -6px rgba(11,29,58,.7); background: #fff; color: var(--ink); border: 2px solid #fff; }
+  .map-pin.on { background: var(--accent); color: #fff; z-index: 5; }
+  .map-hood { position: absolute; font-size: 10px; font-weight: 800; letter-spacing: .12em; color: #A2917E; pointer-events: none; white-space: nowrap; }
+  .map-list { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; padding-right: 2px; }
+  .map-mini { display: flex; gap: 10px; align-items: center; background: #fff; border: 1.5px solid var(--border); border-radius: 16px; padding: 10px; cursor: pointer; }
+  .map-mini.on { background: var(--soft); border-color: var(--accent); }
+  .map-mini .avatar { width: 46px; height: 46px; border-radius: 14px; }
+  .map-mini .name { font-weight: 700; font-size: 14.5px; font-family: 'Outfit', sans-serif; }
+  .map-mini .meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .map-mini .price { margin-left: auto; text-align: right; }
+
+  /* --- walker profile ------------------------------------------------- */
+  .w-hero { position: relative; border-radius: 20px; overflow: hidden; height: 170px; background: linear-gradient(150deg,#2E2559,#6B4E8C 40%,#E2603F 80%,#FFB43A); }
+  .w-hero img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .55; }
+  .w-headrow { display: flex; gap: 16px; align-items: flex-end; margin: -44px 0 20px; position: relative; z-index: 2; padding: 0 4px; }
+  .w-headrow .avatar { width: 92px; height: 92px; border-radius: 22px; border: 4px solid var(--bg); box-shadow: 0 12px 26px -16px rgba(11,29,58,.8); }
+  .w-profile-grid { display: grid; grid-template-columns: 1fr 260px; gap: 20px; align-items: start; }
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-bottom: 16px; }
+  .stat-grid .cell { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 12px; }
+  .stat-grid .v { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 19px; }
+  .stat-grid .k { font-size: 11px; color: var(--label); font-weight: 600; margin-top: 2px; }
+  .week-strip { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 6px; }
+  .week-strip .d { text-align: center; padding: 8px 4px; border-radius: 10px; font-size: 10px; }
+  .review-row { padding-bottom: 14px; border-bottom: 1px solid #F4E8DB; margin-bottom: 14px; }
+  .review-row:last-child { border: none; margin: 0; padding: 0; }
+  .sidebar-sticky { position: sticky; top: 0; background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
+  .slot-row { display: flex; justify-content: space-between; align-items: center; background: #FFFAF4; border: 1.5px solid var(--border2); border-radius: 13px; padding: 11px 13px; cursor: pointer; width: 100%; text-align: left; }
+
+  /* --- booking / checkout ---------------------------------------------- */
+  .book-grid { display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
+  .day-grid { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 7px; }
+  .time-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 7px; }
+  .dur-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dog-pick-row { display: flex; gap: 9px; flex-wrap: wrap; }
+  .dog-pick { display: flex; gap: 9px; align-items: center; padding: 9px 14px 9px 9px; border-radius: 14px; cursor: pointer; border: 1.5px solid var(--border2); background: #fff; }
+  .dog-pick.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .dog-pick .avatar { width: 38px; height: 38px; }
+  .pickup-row { display: flex; align-items: center; gap: 11px; background: #FFFAF4; border: 1.5px solid var(--border2); border-radius: 13px; padding: 11px 13px; }
+  .pickup-row .icon { width: 30px; height: 30px; border-radius: 9px; background: var(--blue-bg); display: grid; place-items: center; color: #1E6FA8; }
+  .summary-row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 7px 0; }
+  .summary-row.total { font-size: 16px; font-weight: 700; border-top: 1px solid #F4E8DB; padding-top: 9px; margin-top: 4px; }
+  .pay-row { display: flex; gap: 12px; align-items: center; width: 100%; padding: 13px; border-radius: 14px; cursor: pointer; border: 1.5px solid var(--border2); background: #fff; text-align: left; }
+  .pay-row.on { background: var(--soft); border-color: var(--accent); }
+  .pay-row .radio { width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto; border: 2px solid #D8C6B2; }
+  .pay-row.on .radio { border: 5px solid var(--accent); }
+
+  /* --- confirmed / live / recap / rate ---------------------------------- */
+  .confirm-box { text-align: center; max-width: 420px; margin: 40px auto; }
+  .confirm-check { width: 78px; height: 78px; margin: 0 auto 16px; border-radius: 50%; background: radial-gradient(circle at 50% 38%,#FFF6D6,#FFD166 40%,#FFA82E 72%,#F4623A); display: grid; place-items: center; color: #fff; font-size: 32px; }
+  .live-badge { display: inline-flex; align-items: center; gap: 8px; background: var(--green-bg); color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .07em; padding: 6px 12px; border-radius: 999px; }
+  .live-dot { position: relative; width: 8px; height: 8px; }
+  .live-dot span { position: absolute; inset: 0; border-radius: 50%; background: #1B9E52; }
+  .live-dot span.ping { animation: ping 1.8s ease-out infinite; }
+  .live-map { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--border2); height: 340px; background: #F7EEE0; }
+  .dog-marker { position: absolute; transform: translate(-50%,-50%); }
+  .dog-marker .ring { position: absolute; inset: -12px; border-radius: 50%; background: rgba(206,58,21,.3); animation: ping 2s ease-out infinite; }
+  .dog-marker .avatar { width: 38px; height: 38px; border: 3px solid #fff; box-shadow: 0 6px 16px -4px rgba(11,29,58,.6); }
+  .live-stats { position: absolute; left: 12px; bottom: 12px; right: 12px; background: rgba(255,255,255,.94); border-radius: 14px; padding: 11px 14px; display: flex; justify-content: space-between; }
+  .live-stats .v { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 18px; }
+  .live-stats .k { font-size: 11px; color: var(--label); font-weight: 600; }
+  .progress-track { height: 8px; border-radius: 999px; background: #F4E8DB; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg,#FFB020,#CE3A15); }
+  .timeline-item { display: flex; gap: 12px; }
+  .timeline-item .rail { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; }
+  .timeline-item .tdot { width: 12px; height: 12px; border-radius: 50%; background: #E8D9C6; }
+  .timeline-item .tdot.on { background: var(--accent); box-shadow: 0 0 0 4px #FFE4D6; }
+  .timeline-item .tline { width: 2px; flex: 1; background: #F0E2D4; min-height: 22px; }
+  .timeline-item .tline.on { background: var(--accent); }
+
+  .recap-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .recap-stats .cell { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 14px; text-align: center; }
+  .recap-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .recap-photos .p { position: relative; height: 150px; border-radius: 16px; overflow: hidden; background: linear-gradient(160deg,#6B4E8C,#E2603F); }
+  .recap-photos img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .recap-photos .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 10px 8px; background: linear-gradient(180deg,transparent,rgba(11,29,58,.8)); color: #fff; font-size: 11.5px; font-weight: 600; }
+
+  .stars { display: flex; gap: 6px; justify-content: center; }
+  .stars button { font-size: 32px; line-height: 1; background: none; border: none; cursor: pointer; padding: 2px; color: #EADCCB; }
+  .stars button.on { color: var(--gold); }
+
+  /* --- chat ------------------------------------------------------------- */
+  .chat-grid { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; height: 100%; }
+  .thread-row { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 13px; cursor: pointer; }
+  .thread-row.on { background: var(--soft); }
+  .thread-row .name { font-weight: 700; font-size: 14px; }
+  .thread-row .last { font-size: 12.5px; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-panel { background: #fff; border: 1px solid var(--border); border-radius: 18px; display: flex; flex-direction: column; height: 480px; }
+  .chat-head { display: flex; gap: 10px; align-items: center; padding: 13px 16px; border-bottom: 1px solid #F4E8DB; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 9px; background: #FFFCF8; }
+  .msg-row { display: flex; }
+  .msg-row.me { justify-content: flex-end; }
+  .bubble { max-width: 72%; padding: 10px 14px; border-radius: 16px; font-size: 13.5px; line-height: 1.4; background: #fff; border: 1px solid var(--border); }
+  .msg-row.me .bubble { background: var(--ink); color: #fff; border: none; }
+  .chat-input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #F4E8DB; }
+  .chat-input-row input { flex: 1; padding: 11px 14px; border: 1.5px solid #EADCCB; border-radius: 999px; background: var(--field); font-size: 13.5px; }
+
+  /* --- bookings / account ---------------------------------------------- */
+  .booking-row { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 15px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .booking-row .avatar { width: 50px; height: 50px; border-radius: 14px; }
+  .account-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .account-row { display: flex; justify-content: space-between; padding: 10px 0; border-top: 1px solid #F4E8DB; font-size: 13.5px; }
+  .dog-row { display: flex; gap: 11px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 8px; }
+  .card-row { display: flex; gap: 10px; align-items: center; padding: 11px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; }
+
+  /* --- task prompt -------------------------------------------------------- */
+  .prompt { width: var(--w); margin: 0 auto 14px; color: #F2EFE6; font-family: 'Instrument Sans', sans-serif; }
+  .progress-rail { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .progress-dot { height: 5px; width: 10px; border-radius: 3px; background: #6E6155; transition: all .3s ease; }
+  .progress-dot.active { width: 24px; background: #F2EFE6; }
+  .progress-spacer { flex: 1; }
+  .progress-label { font-size: 12px; color: #9A958C; }
+  .task-goal .step { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .65; }
+  .task-goal .goal { font-size: 15px; line-height: 21px; margin-top: 6px; }
+  .task-goal .give-up { margin-top: 10px; background: none; border: 0; color: #FFB020; font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0; }
+  .task-goal .retry { margin-top: 8px; font-size: 13px; color: #E88B6A; }
+
+  :root {
+    --task-accent: #CE3A15; --task-accent-hover: #B02F0F; --task-accent-soft: #FFF3EA; --task-accent-line: #FFD9C0;
+    --task-warn: #C4342A; --task-surface: #FFFFFF; --task-surface-hi: #FFFFFF; --task-line: #F0E2D4; --task-line-soft: #F4E8DB;
+    --task-ink: #0B1D3A; --task-ink-2: #43566F; --task-ink-3: #6E6155; --task-muted: #8A8A8A; --task-muted-2: #8A8A8A;
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div>
+    <div class="prompt" id="prompt" hidden>
+      <div class="progress-rail" id="progress-rail"></div>
+      <div class="task-goal" id="task-goal"></div>
+    </div>
+
+    <!-- The measured box. Every click a participant makes is inside it. -->
+    <div class="frame" id="frame">
+      <div class="header" id="header" hidden>
+        <div class="brand" data-goto="explore"><div class="dot"></div><div class="name">Shvil</div></div>
+        <div class="loc-chip"><span class="b"></span>Neve Tzedek, Tel Aviv</div>
+        <div class="navrow" id="navrow"></div>
+        <div class="avatar-btn" data-goto="account"><img src="https://i.pravatar.cc/120?img=31" alt="Yael"></div>
+      </div>
+      <div class="body" id="body"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script>
+  // Isolated client, same reasoning as photo.html: never loads or stores
+  // an auth session, and its absence must not crash the app — only mean
+  // nothing gets written.
+  var supabaseClient = null;
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+  } catch (err) {
+    console.warn('Analytics disabled — could not initialise Supabase:', err);
+  }
+</script>
+<script src="study-core.js"></script>
+<script>
+  const esc = s => String(s).replace(/[&<>"']/g,
+    c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const pic = n => `https://i.pravatar.cc/240?img=${n}`;
+  const cover = n => `https://placedog.net/640/420?id=${n}`;
+  const money = n => Math.round(n);
+
+  // =====================================================================
+  // Content — ported from the Claude Design handoff's W/R/DOGS/DAYS/TIMES.
+  // =====================================================================
+  const WALKERS = [
+    { id: 1, name: 'Noa Ben-Ami', hood: 'Neve Tzedek', dist: '0.4 km', rate: 75, rating: 4.9, revs: 127, resp: '5 min', verified: 1, bg: 1, instant: 1, years: 4, walks: 820, repeat: 64, pic: 5, cov: 11, next: 'Today 16:00',
+      short: 'Vet-tech student who takes the big ones on long Yarkon loops. Photo from every walk, no exceptions.',
+      bio: 'I have been walking dogs in Neve Tzedek and Florentin since my first year of vet-tech school. Large, pully, reactive — those are the dogs I like best, because that is where the work is. Afternoons I do the long shore route down to Charles Clore; mornings are short and brisk.',
+      tags: ['Large dogs', 'Puppies', 'Gives meds', 'Beach runs', 'Reactive dogs'] },
+    { id: 2, name: 'Yonatan Cohen', hood: 'Florentin', dist: '1.1 km', rate: 65, rating: 4.8, revs: 94, resp: '12 min', verified: 1, bg: 1, instant: 0, years: 3, walks: 610, repeat: 48, pic: 12, cov: 3, next: 'Tomorrow 08:00',
+      short: 'Early riser. Does the 07:00 Florentin round rain or shine, then a second loop at dusk.',
+      bio: 'Mornings are mine. I run a fixed 07:00 route through Florentin and Kerem HaTeimanim and take up to three dogs who get along. I am patient with nervous rescues — my own dog was one.',
+      tags: ['Morning walks', 'Rescues', 'Small groups', 'Senior dogs'] },
+    { id: 3, name: 'Maya Shapira', hood: 'Old North', dist: '2.8 km', rate: 90, rating: 5.0, revs: 212, resp: '3 min', verified: 1, bg: 1, instant: 1, years: 7, walks: 1640, repeat: 131, pic: 47, cov: 21, next: 'Today 17:30',
+      short: 'Certified trainer. Every walk doubles as a five-minute loose-leash session, at no extra cost.',
+      bio: 'Seven years, one certification from the Israeli Dog Trainers Association, and roughly sixteen hundred walks. I fold a short training block into every hour — loose leash, recall in the park, settling at cafés.',
+      tags: ['Trainer certified', 'Loose leash', 'Recall work', 'Puppies', 'Cafe manners'] },
+    { id: 4, name: 'Amir Haddad', hood: 'Jaffa', dist: '1.9 km', rate: 70, rating: 4.7, revs: 58, resp: '20 min', verified: 1, bg: 0, instant: 0, years: 2, walks: 310, repeat: 22, pic: 52, cov: 8, next: 'Tomorrow 15:00',
+      short: 'Knows every shaded alley in Ajami. Good with dogs who hate the heat.',
+      bio: 'I grew up in Ajami and I know which streets keep shade until four in the afternoon. I take medium and small dogs, two at a time maximum, and I always end at the fountain on Yefet for water.',
+      tags: ['Hot-weather routes', 'Small dogs', 'Jaffa local', 'Flexible hours'] },
+    { id: 5, name: 'Tamar Levi', hood: 'Lev Ha’ir', dist: '0.9 km', rate: 85, rating: 4.9, revs: 163, resp: '7 min', verified: 1, bg: 1, instant: 1, years: 5, walks: 1120, repeat: 97, pic: 26, cov: 14, next: 'Today 19:00',
+      short: 'Rothschild regular. Handles building doormen, lockboxes and anxious owners equally well.',
+      bio: 'Most of my clients live in the towers around Rothschild, so I am fluent in lockboxes, service elevators and doormen who need convincing. I do a boulevard loop with a stop at the Sheinkin dog run when your dog is social.',
+      tags: ['City dogs', 'Lockbox pickup', 'Dog runs', 'Evening walks'] },
+    { id: 6, name: 'Daniel Ovadia', hood: 'Kerem HaTeimanim', dist: '1.4 km', rate: 60, rating: 4.6, revs: 41, resp: '25 min', verified: 1, bg: 0, instant: 0, years: 1, walks: 150, repeat: 14, pic: 60, cov: 5, next: 'Tomorrow 12:00',
+      short: 'Newest on Shvil and priced accordingly. Endless patience with puppies.',
+      bio: 'I started last winter and I am building up reviews, so my rate is lower than it will be next year. I am best with puppies and dogs under fifteen kilos.',
+      tags: ['Puppies', 'Short walks', 'Budget', 'Midday drop-ins'] },
+    { id: 7, name: 'Shira Almog', hood: 'Park Tzameret', dist: '4.2 km', rate: 95, rating: 4.9, revs: 77, resp: '9 min', verified: 1, bg: 1, instant: 1, years: 6, walks: 740, repeat: 58, pic: 45, cov: 17, next: 'Today 18:00',
+      short: 'Long-distance walker. Books an hour minimum and usually returns a genuinely tired dog.',
+      bio: 'If your dog needs distance rather than sniffing, I am the one. My standard hour covers five to six kilometres through the Hayarkon park trails, and I run with the fit ones.',
+      tags: ['High energy', 'Running', 'Park trails', 'Large dogs'] },
+    { id: 8, name: 'Ilan Mizrahi', hood: 'Yad Eliyahu', dist: '5.1 km', rate: 55, rating: 4.5, revs: 33, resp: '35 min', verified: 0, bg: 0, instant: 0, years: 2, walks: 220, repeat: 11, pic: 68, cov: 2, next: 'Wed 10:00',
+      short: 'Weekday middays only, and the most affordable hour in south Tel Aviv.',
+      bio: 'I walk between shifts, so my slots are weekday middays. I keep it simple: a steady forty-five minute loop, water, and a message when I am back.',
+      tags: ['Midday only', 'Budget', 'Medium dogs', 'Weekdays'] },
+    { id: 9, name: 'Rotem Zilber', hood: 'Basel', dist: '3.3 km', rate: 80, rating: 5.0, revs: 188, resp: '4 min', verified: 1, bg: 1, instant: 1, years: 5, walks: 1290, repeat: 112, pic: 33, cov: 24, next: 'Today 16:30',
+      short: 'The Basel square regular. Half her clients have booked her every week for a year.',
+      bio: 'I have walked the same twelve dogs around Basel and Kikar Milano for years, and I keep three slots a week open for new ones. I am calm, and I will tell you honestly if your dog is bored, stiff or putting on weight.',
+      tags: ['Weekly regulars', 'Senior dogs', 'Calm pace', 'Honest feedback'] },
+    { id: 10, name: 'Adi Nahum', hood: 'Ramat Aviv', dist: '6.4 km', rate: 78, rating: 4.8, revs: 102, resp: '11 min', verified: 1, bg: 1, instant: 0, years: 4, walks: 680, repeat: 51, pic: 15, cov: 27, next: 'Tomorrow 07:30',
+      short: 'Park Hayarkon north side. Takes two dogs from the same home for the price of one and a half.',
+      bio: 'I work the north side — Ramat Aviv, the university, the north end of the park. Two dogs from the same household get a reduced second rate, which is how most of my clients use me.',
+      tags: ['Two-dog homes', 'Park Hayarkon', 'Nervous dogs', 'Early mornings'] }
+  ];
+
+  const REVIEWS = [
+    { a: 'Dana K.', d: 'Luna · Border Collie', s: 5, t: 'Luna came home properly tired for the first time in months. The photos from the beach were the best part of my Tuesday.', w: '2 weeks ago' },
+    { a: 'Ofir M.', d: 'Bamba · Poodle mix', s: 5, t: 'On time every single walk, and unusually gentle with a dog who is scared of almost everyone. We book weekly now.', w: '3 weeks ago' },
+    { a: 'Shani L.', d: 'Kofiko · Beagle', s: 4, t: 'Great walk. Ran about five minutes late because of Allenby, but messaged me before I even noticed.', w: '1 month ago' },
+    { a: 'Eitan R.', d: 'Rocky · Amstaff', s: 5, t: 'Handled Rocky’s pulling better than I do after three years. Asked good questions before the first walk.', w: '1 month ago' },
+    { a: 'Michal A.', d: 'Sushi · Shiba Inu', s: 5, t: 'Sent a potty log and a note that Sushi limped slightly on the right. Vet confirmed a thorn. That is attention.', w: '2 months ago' },
+    { a: 'Guy T.', d: 'Nala · Labrador', s: 5, t: 'Pickup from Florentin, back through the park, home before my meeting ended. Nala clearly adores her.', w: '2 months ago' },
+    { a: 'Liat S.', d: 'Pixel · Mixed', s: 5, t: 'Booked last minute on a Friday afternoon and it was confirmed in four minutes. Lifesaver.', w: '3 months ago' },
+    { a: 'Tom B.', d: 'Chico · Chihuahua', s: 4, t: 'Lovely with Chico. I would just ask for slightly longer photo captions, which is a very small complaint.', w: '3 months ago' }
+  ];
+
+  const DOGS = [
+    { name: 'Shoko', breed: 'Labrador mix', meta: '4 yrs · Large · 28 kg', pic: 'https://placedog.net/240/240?id=7' },
+    { name: 'Nemi', breed: 'Border terrier', meta: '2 yrs · Small · 8 kg', pic: 'https://placedog.net/240/240?id=52' }
+  ];
+
+  const DAYS = [
+    { dow: 'SUN', num: '20', label: 'Today, 20 Sep' }, { dow: 'MON', num: '21', label: 'Monday, 21 Sep' },
+    { dow: 'TUE', num: '22', label: 'Tuesday, 22 Sep' }, { dow: 'WED', num: '23', label: 'Wednesday, 23 Sep' },
+    { dow: 'THU', num: '24', label: 'Thursday, 24 Sep' }, { dow: 'FRI', num: '25', label: 'Friday, 25 Sep' },
+    { dow: 'SAT', num: '26', label: 'Saturday, 26 Sep' }
+  ];
+
+  const TIMES = [
+    { t: '07:00', off: 0 }, { t: '08:30', off: 1 }, { t: '10:00', off: 0 }, { t: '12:00', off: 0 },
+    { t: '14:00', off: 1 }, { t: '16:00', off: 0 }, { t: '17:30', off: 0 }, { t: '19:00', off: 0 }
+  ];
+
+  const TAG_LIST = ['On time', 'Great photos', 'Gentle with the dog', 'Clear communication', 'Went the extra mile', 'Tired happy dog'];
+  const TL_DEFS = [
+    { label: 'Picked up from Shabazi 31', note: 'Walker let herself in with the lockbox code' },
+    { label: 'On the walk', note: 'Heading south along the Neve Tzedek lanes' },
+    { label: 'Heading home', note: 'Water break at the Charles Clore fountain' },
+    { label: 'Home safe', note: 'Leash back on the hook, door locked' }
+  ];
+
+  // =====================================================================
+  // Screens
+  //
+  // Every id here is written to `clicks.step` and `gaze.step`, and the
+  // dashboard's APPS manifest must list the same ones — this array is the
+  // single place the screen list exists.
+  // =====================================================================
+  const SCREENS = ['welcome', 'signup', 'login', 'dogsetup', 'explore', 'walker',
+                    'book', 'checkout', 'confirmed', 'live', 'recap', 'rate',
+                    'chat', 'bookings', 'account'];
+
+  // Screens reached before an account exists. The header nav is withheld
+  // on these, the same way photo.html withholds its tab bar from the auth
+  // flow — a participant cannot skip "register an account" by tapping past it.
+  const ONBOARDING = new Set(['welcome', 'signup', 'login', 'dogsetup']);
+
+  const NAV = [['Explore', 'explore'], ['Walks', 'bookings'], ['Messages', 'chat'], ['Account', 'account']];
+  // Screens reached by drilling into a nav destination keep that tab lit.
+  const NAV_ACTIVE = { walker: 'explore', book: 'explore', checkout: 'explore', confirmed: 'explore',
+                        live: 'bookings', recap: 'bookings', rate: 'bookings' };
+
+  // ---- state ------------------------------------------------------------
+  let screen = 'welcome';
+  let view = 'list';
+  let query = '';
+  let filters = { instant: false, under80: false, verified: false, large: false };
+  let sortKey = 'best';
+  let walkerId = 1;
+  let dogName = '', dogBreed = '', dogSize = 'Large', dogTraits = [], dogNotes = '';
+  let bDate = 0, bTime = '16:00', bDur = 60, bDogIdx = 0, bNotes = '';
+  let payMethod = 'card', promo = '', promoOk = false;
+  let tip = 20, rating = 0, tags = [], reviewText = '';
+  let chatWalkerId = 1, extraMsgs = [];
+  let progress = 22;
+  let liveTimer = null;
+  let stepEnteredAt = Date.now();
+  let inQuestionMode = false;
+
+  const walker = id => WALKERS.find(w => w.id === (id != null ? id : walkerId)) || WALKERS[0];
+  const first = w => w.name.split(' ')[0];
+
+  // =====================================================================
+  // Tell the shared core what this app is.
+  // =====================================================================
+  function reportToAuthor(type, payload) {
+    if (!Study.AUTHOR_MODE || window.parent === window) return;
+    window.parent.postMessage({ source: 'idc-hci-author', type, ...payload }, window.location.origin);
+  }
+
+  Study.configure({
+    app: 'shvil',
+    screens: SCREENS,
+    content: () => document.getElementById('frame'),
+    currentStep: () => screen,
+    // No overlay layer in this design — every screen fully replaces the
+    // frame's content, unlike photo.html's photo viewer.
+    currentOverlay: () => null,
+    onAppScreen: () => !inQuestionMode,
+    overlayActive: () => false,
+    // Every deliberate target is named so nothing falls into the 'none'
+    // mis-click bucket by omission: navigation via data-goto/data-back,
+    // giving up via data-give-up, and every other control carries
+    // `.clickable`. Anything reaching 'none' really did hit empty space.
+    hitOf: (t) => t.closest('[data-give-up]')     ? 'restart'
+                : t.closest('[data-back]')        ? 'back'
+                : t.closest('[data-goto]')        ? 'option'
+                : t.closest('.clickable')         ? 'option'
+                : t.closest('input, textarea')    ? 'option'
+                : 'none',
+    taskId: () => null,
+    gazeState: () => null,
+    studyMode: () => Study.studyMode,
+
+    slots: {
+      progress: () => document.getElementById('progress-rail'),
+      question: () => document.getElementById('body')
+    },
+
+    // A fresh attempt starts at welcome, logged out — where a participant
+    // handed "book a walk with a verified walker" should begin.
+    resetApp: () => {
+      screen = 'welcome'; view = 'list'; query = '';
+      filters = { instant: false, under80: false, verified: false, large: false };
+      sortKey = 'best'; walkerId = 1;
+      dogName = ''; dogBreed = ''; dogSize = 'Large'; dogTraits = []; dogNotes = '';
+      bDate = 0; bTime = '16:00'; bDur = 60; bDogIdx = 0; bNotes = '';
+      payMethod = 'card'; promo = ''; promoOk = false;
+      tip = 20; rating = 0; tags = []; reviewText = '';
+      chatWalkerId = 1; extraMsgs = []; progress = 22;
+      stopLiveTimer();
+      stepEnteredAt = Date.now();
+      render();
+    },
+
+    // The header belongs to the app, not to a question drawn inside the
+    // frame — a nav bar under a survey question would navigate away from it.
+    chrome: (mode) => {
+      inQuestionMode = mode !== 'app';
+      document.getElementById('header').hidden = inQuestionMode || ONBOARDING.has(screen);
+    },
+
+    // Deliberately false: the header nav reaches any authed screen from
+    // any other, so there is no moment an attempt has run out of road.
+    attemptExhausted: () => false,
+    onRetry: () => {},
+
+    // Nothing to shut down: this app never opens a camera or mic.
+    onFinish: async () => 'Thanks'
+  });
+
+  const PREVIEW = Study.PREVIEW_MODE ? Study.PREVIEW_STEP : null;
+  const TRACKING_OFF = Study.TRACKING_OFF;
+
+  function record(value) {
+    return Study.choice(screen, value, Date.now() - stepEnteredAt);
+  }
+
+  function scrollTop() { const b = document.getElementById('body'); if (b) b.scrollTop = 0; }
+
+  function go(next, value) {
+    if (!SCREENS.includes(next)) return;
+    if (record(value != null ? value : next)) return;
+    if (screen === 'live') stopLiveTimer();
+    screen = next;
+    stepEnteredAt = Date.now();
+    if (next === 'live') startLiveTimer();
+    scrollTop();
+    render();
+  }
+
+  // For a choice that stays on the current screen (a filter, a day, a
+  // rating star): record it against the screen it happened on, then apply
+  // the mutation and repaint — unless a route task just consumed it.
+  function choose(value, mutate) {
+    if (record(value)) return;
+    mutate();
+    render();
+  }
+
+  function startLiveTimer() {
+    stopLiveTimer();
+    liveTimer = setInterval(() => {
+      if (screen !== 'live') return;
+      progress = Math.min(100, progress + 3);
+      renderBody();
+    }, 900);
+  }
+  function stopLiveTimer() { if (liveTimer) clearInterval(liveTimer); liveTimer = null; }
+
+  // =====================================================================
+  // Small render helpers
+  // =====================================================================
+  function chipEl(label, on, extra) {
+    return `<button class="chip${on ? ' on' : ''} clickable" ${extra || ''}>${esc(label)}</button>`;
+  }
+
+  function starsRow(rev) {
+    return '★'.repeat(rev.s) + '☆'.repeat(5 - rev.s);
+  }
+
+  // =====================================================================
+  // Screens
+  // =====================================================================
+  const BODY = {};
+
+  BODY.welcome = () => `
+    <div class="welcome">
+      <div class="welcome-art">
+        <div class="sun"></div><div class="hz"></div>
+        <div class="kicker">Tel Aviv · Jaffa to Ramat Aviv</div>
+        <h1>Good walks<br>for good dogs.</h1>
+        <p>Vetted local walkers, golden-hour loops along the Yarkon and the beach, and a photo from every single walk.</p>
+      </div>
+      <div class="welcome-panel"><div class="inner">
+        <div class="faces">
+          ${[5, 47, 33, 26].map(n => `<div class="avatar" style="width:34px;height:34px"><img src="${pic(n)}" alt=""></div>`).join('')}
+          <span class="n">10 walkers free this evening</span>
+        </div>
+        <h2 style="font-size:26px;margin-bottom:8px">Let's get you matched</h2>
+        <p class="muted" style="margin:0 0 22px;font-size:14.5px;line-height:1.5">Tell us about your dog once. Book in about forty seconds after that.</p>
+        <button class="btn primary block" data-goto="signup">Create an account</button>
+        <div style="height:10px"></div>
+        <button class="btn block" data-goto="login">I already have an account</button>
+        <div class="proof">
+          ${['ID verified', 'Insured walks', 'Free cancellation'].map(t => `<div class="item"><span class="ok">✓</span>${t}</div>`).join('')}
+        </div>
+      </div></div>
+    </div>`;
+
+  function authForm(kind) {
+    const isSignup = kind === 'signup';
+    return `
+    <div class="center-page">
+      <div class="auth-card">
+        <div class="dot"></div>
+        <h2 style="font-size:23px;margin-bottom:5px">${isSignup ? 'Create your account' : 'Welcome back'}</h2>
+        <p class="muted" style="margin:0 0 20px;font-size:13.5px">${isSignup ? 'Two fields now, dog details next.' : 'Your dog has been waiting by the door.'}</p>
+        ${isSignup ? `<label class="field-wrap"><span class="label">Your name</span>
+          <input class="field clickable" id="f-name" value="${esc(dogName ? '' : '')}" placeholder="Yael Bar"></label>` : ''}
+        <label class="field-wrap"><span class="label">Email</span><input class="field clickable" id="f-email" placeholder="yael@mail.com"></label>
+        <label class="field-wrap"><span class="label">Password</span><input class="field clickable" id="f-pass" type="password" placeholder="••••••••"></label>
+        <button class="btn primary block clickable" style="margin-top:18px" data-auth-submit="${kind}">${isSignup ? 'Continue' : 'Log in'}</button>
+        <div class="divider"><div class="line"></div><span>or</span><div class="line"></div></div>
+        <button class="btn block clickable" data-auth-submit="${kind}">Continue with Google</button>
+        <p style="text-align:center;margin:16px 0 0;font-size:13px" class="muted">
+          ${isSignup ? 'Already with us? ' : 'New to Shvil? '}
+          <span class="clickable" style="color:var(--accent);font-weight:700;cursor:pointer" data-goto="${isSignup ? 'login' : 'signup'}">${isSignup ? 'Log in' : 'Create an account'}</span>
+        </p>
+      </div>
+    </div>`;
+  }
+  BODY.signup = () => authForm('signup');
+  BODY.login = () => authForm('login');
+
+  BODY.dogsetup = () => `
+    <div class="center-page">
+      <div style="width:100%;max-width:560px">
+        <div class="setup-steps">
+          <div class="bar on"></div><div class="bar on"></div><div class="bar"></div>
+          <span class="n">STEP 2 OF 3</span>
+        </div>
+        <div class="dogsetup-card">
+          <h2 style="font-size:24px;margin-bottom:5px">Who are we walking?</h2>
+          <p class="muted" style="margin:0 0 20px;font-size:13.5px">Walkers see this before they accept, so the honest version helps most.</p>
+          <div style="display:flex;gap:16px;align-items:center;margin-bottom:20px">
+            <div class="avatar" style="width:84px;height:84px"><img src="https://placedog.net/240/240?id=7" alt=""></div>
+            <div>
+              <button class="btn clickable" id="change-photo">Change photo</button>
+              <div style="font-size:12px;color:var(--label);margin-top:6px">A clear face shot helps walkers spot your dog</div>
+            </div>
+          </div>
+          <div class="grid2">
+            <label><span class="label">Dog's name</span><input class="field clickable" id="dog-name-input" value="${esc(dogName)}" placeholder="Shoko"></label>
+            <label><span class="label">Breed</span><input class="field clickable" id="dog-breed-input" value="${esc(dogBreed)}" placeholder="Labrador mix"></label>
+          </div>
+          <div style="margin-top:16px"><span class="label">Size</span>
+            <div style="display:flex;gap:8px">${['Small','Medium','Large'].map(s => chipEl(s, dogSize === s, `data-size="${s}"`)).join('')}</div>
+          </div>
+          <div style="margin-top:16px"><span class="label">Good to know</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${['Pulls at first','Loves the beach','Shy with strangers','Good with dogs','Needs meds','High energy'].map(t => chipEl(t, dogTraits.includes(t), `data-trait="${esc(t)}"`)).join('')}</div>
+          </div>
+          <label style="display:block;margin-top:16px"><span class="label">Anything else</span>
+            <textarea class="field clickable" id="dog-notes-input" rows="3" placeholder="Pulls hard for the first five minutes, then settles.">${esc(dogNotes)}</textarea></label>
+          <button class="btn primary block clickable" style="margin-top:18px" id="finish-setup">Find walkers near me</button>
+        </div>
+      </div>
+    </div>`;
+
+  function decorate(w) {
+    const badges = [];
+    if (w.verified) badges.push('ID verified');
+    if (w.bg) badges.push('Background checked');
+    return { ...w, badges, ratingF: w.rating.toFixed(1) };
+  }
+
+  function filteredWalkers() {
+    const q = query.trim().toLowerCase();
+    let list = WALKERS.filter(w => {
+      if (q && !(w.name + ' ' + w.hood + ' ' + w.tags.join(' ')).toLowerCase().includes(q)) return false;
+      if (filters.instant && !w.instant) return false;
+      if (filters.under80 && w.rate >= 80) return false;
+      if (filters.verified && !(w.verified && w.bg)) return false;
+      if (filters.large && !w.tags.includes('Large dogs')) return false;
+      return true;
+    });
+    if (sortKey === 'price') list = list.slice().sort((a, b) => a.rate - b.rate);
+    if (sortKey === 'near') list = list.slice().sort((a, b) => parseFloat(a.dist) - parseFloat(b.dist));
+    if (sortKey === 'best') list = list.slice().sort((a, b) => (b.rating * 100 + b.revs / 50) - (a.rating * 100 + a.revs / 50));
+    return list.map(decorate);
+  }
+
+  BODY.explore = () => {
+    const list = filteredWalkers();
+    const filterDefs = [['Instant book', 'instant'], ['Under ₪80/hr', 'under80'], ['Verified + checked', 'verified'], ['Large dogs', 'large']];
+    return `
+    <div class="col">
+      <div class="explore-top">
+        <div>
+          <div class="kicker">Sunday · 20 September</div>
+          <h1 style="font-size:30px;margin-top:6px">Good evening, Yael.</h1>
+          <p class="muted" style="margin:6px 0 0;font-size:14px">Shoko's last walk was 31 hours ago. Golden hour is at 18:42.</p>
+        </div>
+        <div class="viewtabs">
+          <button aria-current="${view === 'list'}" data-view="list" class="clickable">List</button>
+          <button aria-current="${view === 'map'}" data-view="map" class="clickable">Map</button>
+        </div>
+      </div>
+      <div class="search-row">
+        <div class="search-box"><span class="muted">⌕</span><input id="q-input" placeholder="Search by name, neighborhood or speciality" value="${esc(query)}"></div>
+        ${filterDefs.map(([label, k]) => chipEl(label, filters[k], `data-filter="${k}"`)).join('')}
+      </div>
+      <div class="result-row">
+        <div class="muted" style="font-weight:600">${list.length} walkers within 3 km of Neve Tzedek</div>
+        <div class="sorts"><span class="muted" style="font-weight:600;font-size:12.5px">Sort</span>
+          ${[['Best match','best'],['Nearest','near'],['Price','price']].map(([l,k]) => `<button aria-current="${sortKey===k}" data-sort="${k}" class="clickable">${l}</button>`).join('')}
+        </div>
+      </div>
+      ${view === 'map' ? exploreMap(list) : exploreList(list)}
+    </div>`;
+  };
+
+  function exploreList(list) {
+    return `<div class="w-grid">${list.map(w => `
+      <div class="w-card clickable" data-open="${w.id}">
+        <div class="cover"><img src="${cover(w.cov)}" alt=""><div class="shade"></div>
+          ${w.instant ? `<span class="badge-gold instant">INSTANT BOOK</span>` : ''}
+          <span class="rate-badge"><span class="star-ink">★</span> ${w.ratingF}</span>
+          <div class="who"><div class="avatar" style="width:44px;height:44px"><img src="${pic(w.pic)}" alt=""></div>
+            <div><div class="name">${esc(w.name)}</div><div class="sub">${esc(w.hood)} · ${w.dist} away</div></div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="badges">${w.badges.map(b => `<span class="badge-green">✓ ${b}</span>`).join('')}<span class="badge-blue">Replies in ${w.resp}</span></div>
+          <p class="short">${esc(w.short)}</p>
+          <div class="tags">${w.tags.slice(0,3).map(t => `<span>${esc(t)}</span>`).join('')}</div>
+          <div class="foot">
+            <div><span class="price">₪${w.rate}</span><small>/hr</small><div style="font-size:11px;color:var(--label);margin-top:1px">Next: ${w.next}</div></div>
+            <div class="btns"><button class="btn clickable" data-open="${w.id}">View</button><button class="btn primary clickable" data-book="${w.id}">Book</button></div>
+          </div>
+        </div>
+      </div>`).join('')}</div>`;
+  }
+
+  function exploreMap(list) {
+    const gx = [34,46,62,30,44,38,70,52], gy = [68,52,26,86,40,76,18,60];
+    const hoods = [
+      { name: 'PARK HAYARKON', x: 50, y: 8 }, { name: 'OLD NORTH', x: 85, y: 34 },
+      { name: 'LEV HA’IR', x: 77, y: 54 }, { name: 'NEVE TZEDEK', x: 24, y: 58 }, { name: 'JAFFA', x: 28, y: 95 }
+    ];
+    return `<div class="explore-map">
+      <div class="map-box">
+        <div class="map-shore"></div>
+        ${hoods.map(h => `<div class="map-hood" style="left:${h.x}%;top:${h.y}%">${h.name}</div>`).join('')}
+        ${list.slice(0,8).map((w,i) => `<div class="map-pin${w.id===walkerId?' on':''} clickable" data-open="${w.id}" style="left:${gx[i]}%;top:${gy[i]}%">₪${w.rate}</div>`).join('')}
+        <div style="position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.92);border-radius:10px;padding:6px 10px;font-size:11px;font-weight:600;color:var(--muted)">Stylised map · ₪ per hour</div>
+      </div>
+      <div class="map-list">${list.map(w => `
+        <div class="map-mini clickable${w.id===walkerId?' on':''}" data-open="${w.id}">
+          <div class="avatar" style="width:46px;height:46px;border-radius:14px"><img src="${pic(w.pic)}" alt=""></div>
+          <div><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.hood)} · ${w.dist} · <span class="star-ink">★</span> ${w.ratingF}</div></div>
+          <div class="price"><div style="font-family:'Outfit',sans-serif;font-weight:700">₪${w.rate}</div><div style="font-size:10.5px;color:var(--label)">per hour</div></div>
+        </div>`).join('')}</div>
+    </div>`;
+  }
+
+  BODY.walker = () => {
+    const w = decorate(walker());
+    const wi = WALKERS.indexOf(walker());
+    const revs = [REVIEWS[wi % 8], REVIEWS[(wi + 3) % 8], REVIEWS[(wi + 5) % 8]];
+    const stats = [[w.walks,'walks done'],[w.repeat,'repeat clients'],[w.years+' yr','experience'],[w.resp,'avg reply']];
+    const open = [3,0,2,4,1,0,3];
+    const bookLine = w.instant ? 'Instant book · confirmed the moment you pay' : `Request to book · usually accepted in ${w.resp}`;
+    return `<div class="col">
+      <button class="back-link clickable" data-back="explore">← Back to walkers</button>
+      <div class="w-hero"><img src="${cover(w.cov)}" alt=""></div>
+      <div class="w-profile-grid">
+        <div>
+          <div class="w-headrow">
+            <div class="avatar" style="width:92px;height:92px;border-radius:22px;border:4px solid var(--bg)"><img src="${pic(w.pic)}" alt=""></div>
+            <div>
+              <h1 style="font-size:28px">${esc(w.name)}</h1>
+              <div class="muted" style="font-size:13.5px;margin-top:3px">${esc(w.hood)} · ${w.dist} from you · ${w.years} years walking</div>
+              <div style="display:flex;gap:6px;margin-top:8px">${w.badges.map(b => `<span class="badge-green">✓ ${b}</span>`).join('')}<span class="badge-blue">Replies in ${w.resp}</span></div>
+            </div>
+          </div>
+          <div class="stat-grid">${stats.map(([v,k]) => `<div class="cell"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('')}</div>
+          <div class="card" style="margin-bottom:14px">
+            <h3 style="font-size:17px;margin-bottom:9px">About ${esc(first(w))}</h3>
+            <p style="font-size:14.5px;line-height:1.6;color:var(--slate);margin:0">${esc(w.bio)}</p>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px">${w.tags.map(t => `<span style="font-size:12.5px;font-weight:600;color:var(--muted);border:1px solid var(--border2);padding:5px 10px;border-radius:9px">${esc(t)}</span>`).join('')}</div>
+          </div>
+          <div class="card" style="margin-bottom:14px">
+            <h3 style="font-size:17px;margin-bottom:12px">This week</h3>
+            <div class="week-strip">${DAYS.map((d,i) => `<div class="d" style="background:${open[i]?'#FFF3EA':'#F7EFE5'};color:${open[i]?'var(--accent)':'#BDAE9E'};border:1px solid ${open[i]?'var(--soft-border)':'var(--border)'}"><div>${d.dow}</div><div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px;margin-top:2px">${d.num}</div><div style="margin-top:2px">${open[i]?open[i]+' slots':'full'}</div></div>`).join('')}</div>
+          </div>
+          <div class="card">
+            <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:14px"><h3 style="font-size:17px">Reviews</h3><span class="muted" style="font-size:13px"><span class="star-ink">★</span> ${w.ratingF} · ${w.revs} walks reviewed</span></div>
+            ${revs.map(r => `<div class="review-row"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><b style="font-size:14px">${esc(r.a)}</b><span class="muted" style="font-size:12px">${r.w}</span></div><div class="muted" style="font-size:12px;margin:2px 0 6px"><span class="star-ink">${starsRow(r)}</span></div><p style="margin:0;font-size:14px;line-height:1.5;color:var(--slate)">${esc(r.t)}</p></div>`).join('')}
+          </div>
+        </div>
+        <div class="sidebar-sticky">
+          <div style="display:flex;align-items:baseline;gap:6px"><span style="font-family:'Outfit',sans-serif;font-weight:800;font-size:28px">₪${w.rate}</span><span class="muted" style="font-size:13.5px">per hour</span></div>
+          <div class="muted" style="font-size:12.5px;margin-top:3px">${bookLine}</div>
+          <div style="height:1px;background:#F4E8DB;margin:14px 0"></div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <button class="slot-row clickable" data-quickslot="0"><span><b>Today</b><div class="muted" style="font-size:12px">${w.next.startsWith('Today') ? w.next.replace('Today ','') + ' · 1 hr free' : 'fully booked'}</div></span><span style="color:var(--accent);font-weight:700;font-size:12.5px">Choose</span></button>
+            <button class="slot-row clickable" data-quickslot="1"><span><b>Tomorrow</b><div class="muted" style="font-size:12px">08:00, 12:00, 17:30 free</div></span><span style="color:var(--accent);font-weight:700;font-size:12.5px">Choose</span></button>
+            <button class="slot-row clickable" data-quickslot="2"><span><b>Tuesday</b><div class="muted" style="font-size:12px">10:00, 16:00 free</div></span><span style="color:var(--accent);font-weight:700;font-size:12.5px">Choose</span></button>
+          </div>
+          <button class="btn primary block clickable" style="margin-top:14px" data-book="${w.id}">${w.instant ? 'Book a walk' : 'Request a walk'}</button>
+          <button class="btn block clickable" style="margin-top:8px" data-goto="chat">Message ${esc(first(w))}</button>
+          <div class="muted" style="margin-top:12px;font-size:11.5px;line-height:1.5">Free cancellation up to 2 hours before. Every walk is insured up to ₪25,000.</div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  BODY.book = () => {
+    const w = walker();
+    const dur = money(w.rate * bDur / 60), fee = 6, total = dur + fee, grand = total - (promoOk ? 20 : 0);
+    const dog = DOGS[bDogIdx];
+    return `<div class="col">
+      <button class="back-link clickable" data-back="walker">← ${esc(w.name)}</button>
+      <h1 style="font-size:26px;margin-bottom:5px">Book ${esc(first(w))}</h1>
+      <p class="muted" style="margin:0 0 20px;font-size:14.5px">Everything on one page — change anything before you pay.</p>
+      <div class="book-grid">
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="card">
+            <h3 style="font-size:15.5px;margin-bottom:11px">Pick a day</h3>
+            <div class="day-grid">${DAYS.map((d,i) => `<button class="box-opt clickable${bDate===i?' on':''}" data-day="${i}"><div style="font-size:10px;font-weight:700;opacity:.7">${d.dow}</div><div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:16px;margin-top:2px">${d.num}</div></button>`).join('')}</div>
+            <h3 style="font-size:15.5px;margin:18px 0 11px">Start time</h3>
+            <div class="time-grid">${TIMES.map(t => `<button class="box-opt clickable${!t.off && bTime===t.t?' on':''}${t.off?' off':''}" ${t.off?'':`data-time="${t.t}"`} style="font-weight:700;font-size:13.5px">${t.t}</button>`).join('')}</div>
+            <div class="muted" style="font-size:12px;margin-top:9px">Greyed times are already taken. Golden hour today is 18:42.</div>
+            <h3 style="font-size:15.5px;margin:18px 0 11px">How long</h3>
+            <div class="dur-row">${[30,45,60].map(d => `<button class="box-opt clickable${bDur===d?' on':''}" data-dur="${d}" style="min-width:90px"><div style="font-weight:700;font-size:14px">${d} min</div><div style="font-size:11.5px;opacity:.75;margin-top:1px">₪${money(w.rate*d/60)}</div></button>`).join('')}</div>
+          </div>
+          <div class="card">
+            <h3 style="font-size:15.5px;margin-bottom:11px">Which dog</h3>
+            <div class="dog-pick-row">${DOGS.map((d,i) => `<button class="dog-pick clickable${bDogIdx===i?' on':''}" data-dog="${i}"><div class="avatar" style="width:40px;height:40px"><img src="${d.pic}" alt=""></div><div style="text-align:left"><div style="font-weight:700;font-size:14px">${esc(d.name)}</div><div style="font-size:12px;opacity:.72">${esc(d.breed)}</div></div></button>`).join('')}</div>
+            <h3 style="font-size:15.5px;margin:18px 0 9px">Pickup</h3>
+            <div class="pickup-row"><div class="icon">⌂</div><div style="flex:1"><b style="font-size:14px">Shabazi 31, Neve Tzedek</b><div class="muted" style="font-size:12.5px">Key in the lockbox · code shared 30 min before</div></div></div>
+            <h3 style="font-size:15.5px;margin:18px 0 8px">Note for ${esc(first(w))}</h3>
+            <textarea class="field clickable" id="b-notes" rows="3" placeholder="Shoko pulls for the first five minutes.">${esc(bNotes)}</textarea>
+          </div>
+        </div>
+        <div class="sidebar-sticky">
+          <div style="display:flex;gap:11px;align-items:center;padding-bottom:14px;border-bottom:1px solid #F4E8DB">
+            <div class="avatar" style="width:48px;height:48px;border-radius:14px"><img src="${pic(w.pic)}" alt=""></div>
+            <div><b style="font-family:'Outfit',sans-serif;font-size:16px">${esc(w.name)}</b><div class="muted" style="font-size:12.5px"><span class="star-ink">★</span> ${w.rating.toFixed(1)} · ${esc(w.hood)}</div></div>
+          </div>
+          <div style="padding:12px 0;border-bottom:1px solid #F4E8DB">
+            <div class="summary-row"><span class="muted">${DAYS[bDate].label}</span><b>${bTime}</b></div>
+            <div class="summary-row"><span class="muted">Walk length</span><b>${bDur} min</b></div>
+            <div class="summary-row"><span class="muted">Dog</span><b>${esc(dog.name)}</b></div>
+          </div>
+          <div style="padding:12px 0">
+            <div class="summary-row"><span class="muted">₪${w.rate} × ${(bDur/60).toFixed(bDur%60===0?0:2)} hr</span><span>₪${dur}</span></div>
+            <div class="summary-row"><span class="muted">Service fee</span><span>₪${fee}</span></div>
+            <div class="summary-row total"><span>Total</span><span>₪${grand}</span></div>
+          </div>
+          <button class="btn primary block clickable" id="book-next">Continue to payment</button>
+          <div class="muted" style="margin-top:10px;font-size:11.5px;text-align:center">You won't be charged until ${esc(first(w))} confirms.</div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  BODY.checkout = () => {
+    const w = walker();
+    const dur = money(w.rate * bDur / 60), fee = 6, total = dur + fee, grand = total - (promoOk ? 20 : 0);
+    const methods = [['card','Visa •••• 4242','Expires 08/29','DEFAULT'], ['bit','Bit','Pay from your phone','' ], ['apple','Apple Pay','Face ID confirmation','']];
+    return `<div class="col">
+      <button class="back-link clickable" data-back="book">← Booking details</button>
+      <h1 style="font-size:26px;margin-bottom:5px">Payment</h1>
+      <p class="muted" style="margin:0 0 20px;font-size:14.5px">Held now, released to ${esc(first(w))} an hour after the walk ends.</p>
+      <div class="book-grid">
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="card">
+            <h3 style="font-size:15.5px;margin-bottom:11px">Pay with</h3>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              ${methods.map(([k,label,sub,tag]) => `<button class="pay-row clickable${payMethod===k?' on':''}" data-pay="${k}"><div class="radio"></div><div style="flex:1;text-align:left"><b style="font-size:14px">${label}</b><div class="muted" style="font-size:12.5px">${sub}</div></div>${tag?`<span style="font-size:11px;font-weight:800;color:var(--label)">${tag}</span>`:''}</button>`).join('')}
+            </div>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <input class="field clickable" id="promo-input" value="${esc(promo)}" placeholder="Promo code" style="flex:1">
+              <button class="btn clickable" id="promo-apply">Apply</button>
+            </div>
+            ${promoOk ? `<div style="margin-top:9px;font-size:13px;font-weight:600;color:var(--green)">FIRSTWALK applied — ₪20 off your first booking.</div>` : ''}
+          </div>
+          <div class="card"><h3 style="font-size:15.5px;margin-bottom:9px">Cancellation</h3>
+            <p style="margin:0;font-size:14px;line-height:1.55;color:var(--slate)">Cancel more than 2 hours before ${bTime} and you get a full refund. After that, half the walk fee goes to ${esc(first(w))} for holding the slot.</p></div>
+        </div>
+        <div class="sidebar-sticky">
+          <div style="display:flex;gap:11px;align-items:center;padding-bottom:14px;border-bottom:1px solid #F4E8DB">
+            <div class="avatar" style="width:48px;height:48px;border-radius:14px"><img src="${pic(w.pic)}" alt=""></div>
+            <div><b style="font-family:'Outfit',sans-serif;font-size:16px">${esc(w.name)}</b><div class="muted" style="font-size:12.5px">${DAYS[bDate].label} · ${bTime} · ${bDur} min</div></div>
+          </div>
+          <div style="padding:12px 0">
+            <div class="summary-row"><span class="muted">Walk</span><span>₪${dur}</span></div>
+            <div class="summary-row"><span class="muted">Service fee</span><span>₪${fee}</span></div>
+            ${promoOk ? `<div class="summary-row" style="color:var(--green)"><span>FIRSTWALK</span><b>−₪20</b></div>` : ''}
+            <div class="summary-row total"><span>Total</span><span>₪${grand}</span></div>
+          </div>
+          <button class="btn primary block clickable" id="confirm-pay">${w.instant ? 'Pay ₪'+grand : 'Request and hold ₪'+grand}</button>
+          <div class="muted" style="margin-top:10px;font-size:11.5px;text-align:center">Tip after the walk, if you feel like it.</div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  BODY.confirmed = () => {
+    const w = walker();
+    const dog = DOGS[bDogIdx];
+    return `<div class="col col-tight">
+      <div class="confirm-box">
+        <div class="confirm-check">✓</div>
+        <h1 style="font-size:30px;margin-bottom:8px">${w.instant ? 'Booked.' : 'Request sent.'}</h1>
+        <p class="muted" style="font-size:15.5px;line-height:1.55;margin:0 0 22px">${w.instant
+          ? `${esc(first(w))} is confirmed for ${bDate===0?'today':DAYS[bDate].label.split(',')[0]} at ${bTime}. You will get a message when the walk starts.`
+          : `${esc(first(w))} usually replies in ${w.resp}. Nothing is charged until then.`}</p>
+        <div class="card" style="text-align:left">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div class="avatar" style="width:52px;height:52px;border-radius:14px"><img src="${pic(w.pic)}" alt=""></div>
+            <div><b style="font-family:'Outfit',sans-serif;font-size:16px">${esc(w.name)} & ${esc(dog.name)}</b><div class="muted" style="font-size:13px">${DAYS[bDate].label} · ${bTime} · ${bDur} min</div></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button class="btn primary clickable" style="flex:1" data-goto="live">Track the walk</button>
+            <button class="btn clickable" style="flex:1" data-goto="chat">Message ${esc(first(w))}</button>
+          </div>
+        </div>
+        <button class="btn ghost clickable" style="margin-top:18px" data-goto="explore">Back to walkers</button>
+      </div>
+    </div>`;
+  };
+
+  BODY.live = () => {
+    const w = walker();
+    const dog = DOGS[bDogIdx];
+    const pts = [[14,82],[26,70],[38,74],[52,54],[64,46],[78,32],[88,24]];
+    let segs = [], tot = 0;
+    for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]); segs.push(d); tot += d; }
+    let want = tot * progress / 100, dx = pts[0][0], dy = pts[0][1];
+    for (let i = 0; i < segs.length; i++) {
+      if (want <= segs[i]) { const r = want / segs[i]; dx = pts[i][0] + (pts[i+1][0]-pts[i][0])*r; dy = pts[i][1] + (pts[i+1][1]-pts[i][1])*r; break; }
+      want -= segs[i]; dx = pts[i+1][0]; dy = pts[i+1][1];
+    }
+    const stage = progress < 25 ? 0 : progress < 70 ? 1 : progress < 96 ? 2 : 3;
+    const polyPts = pts.map(p => p.join(',')).join(' ');
+    return `<div class="col">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px">
+        <div>
+          <div class="live-badge"><span class="live-dot"><span></span><span class="ping"></span></span>WALK IN PROGRESS</div>
+          <h1 style="font-size:24px;margin-top:10px">${TL_DEFS[stage].label==='Home safe'?esc(dog.name)+' is home':esc(dog.name)+' is out with '+esc(first(w))}</h1>
+          <p class="muted" style="margin:5px 0 0">${['Just left the building','Somewhere between Shabazi and the shore','On the way back up Shabazi','Back home, door locked'][stage]}</p>
+        </div>
+        <button class="btn clickable" data-goto="recap">Skip to recap →</button>
+      </div>
+      <div class="explore-map" style="grid-template-columns:1fr 320px">
+        <div class="live-map">
+          <div class="map-shore"></div>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+            <polyline points="${polyPts}" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" vector-effect="non-scaling-stroke"></polyline>
+            <polyline points="${polyPts}" fill="none" stroke="#CE3A15" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" style="stroke-dasharray:400;stroke-dashoffset:${400-400*progress/100}"></polyline>
+          </svg>
+          <div style="position:absolute;left:14%;top:82%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:#0B1D3A;border:3px solid #fff"></div>
+          <div class="dog-marker" style="left:${dx}%;top:${dy}%"><span class="ring"></span><div class="avatar" style="width:38px;height:38px"><img src="${pic(w.pic)}" alt=""></div></div>
+          <div class="live-stats">
+            <div><div class="v">${(2.4*progress/100).toFixed(1)} km</div><div class="k">distance</div></div>
+            <div><div class="v">${Math.round(60*progress/100)} min</div><div class="k">elapsed</div></div>
+            <div><div class="v">1 / 1</div><div class="k">pee / poo</div></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="card">
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+              <div class="avatar" style="width:46px;height:46px;border-radius:13px"><img src="${pic(w.pic)}" alt=""></div>
+              <div style="flex:1"><b style="font-family:'Outfit',sans-serif;font-size:15.5px">${esc(w.name)}</b><div class="muted" style="font-size:12px">with ${esc(dog.name)} · started 18:42</div></div>
+              <button class="btn clickable" style="padding:8px 13px;font-size:12.5px" data-goto="chat">Message</button>
+            </div>
+            <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--label);font-weight:600;margin-top:6px"><span>18:42</span><span>${progress}% done</span><span>19:42</span></div>
+          </div>
+          <div class="card">
+            <h3 style="font-size:15.5px;margin-bottom:12px">Live updates</h3>
+            ${TL_DEFS.map((t,i) => `<div class="timeline-item"><div class="rail"><div class="tdot${i<=stage?' on':''}"></div><div class="tline${i<stage?' on':''}" style="min-height:${i===3?'0':'22px'}"></div></div><div style="padding-bottom:14px"><div style="font-weight:700;font-size:14px;color:${i<=stage?'var(--ink)':'#A2917E'}">${t.label}</div><div class="muted" style="font-size:12px;margin-top:2px">${t.note}</div></div></div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  BODY.recap = () => {
+    const w = walker();
+    const dog = DOGS[bDogIdx];
+    const total = money(w.rate * bDur / 60) + 6 - (promoOk ? 20 : 0);
+    const photos = [
+      ['https://placedog.net/500/620?id=61','Sunset on the Charles Clore lawn'],
+      ['https://placedog.net/500/620?id=34','Shabazi, mid-sniff'],
+      ['https://placedog.net/500/620?id=48','Water stop before heading back']
+    ];
+    return `<div class="col col-narrow">
+      <div style="text-align:center;margin-bottom:22px">
+        <div class="kicker">Walk complete · 18:42–19:42</div>
+        <h1 style="font-size:28px;margin-top:8px">${esc(dog.name)} had a very good hour.</h1>
+      </div>
+      <div class="recap-stats">${[['3.8 km','walked'],['61 min','out'],['2','water breaks'],['₪'+total,'paid']].map(([v,k]) => `<div class="cell"><div style="font-family:'Outfit',sans-serif;font-weight:800;font-size:21px">${v}</div><div class="muted" style="font-size:11.5px;margin-top:2px">${k}</div></div>`).join('')}</div>
+      <div class="recap-photos">${photos.map(([src,cap]) => `<div class="p"><img src="${src}" alt=""><div class="cap">${cap}</div></div>`).join('')}</div>
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;gap:11px;align-items:center;margin-bottom:12px">
+          <div class="avatar" style="width:42px;height:42px"><img src="${pic(w.pic)}" alt=""></div>
+          <div><b style="font-family:'Outfit',sans-serif;font-size:15px">${esc(first(w))}'s note</b><div class="muted" style="font-size:12px">Sent at 19:44</div></div>
+        </div>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:var(--slate)">We did the Shabazi loop down to the Charles Clore lawn and sat for the sunset. ${esc(dog.name)} pulled for about four minutes and then walked beautifully on a loose leash. Drank a full bowl at home, one pee at the start, one poo near the park — bagged. Left the leash on the hook.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:13px">${['1 pee','1 poo, bagged','Full bowl at home','Leash back on the hook'].map(l => `<span class="badge-green">✓ ${l}</span>`).join('')}</div>
+      </div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap">
+        <button class="btn primary clickable" style="flex:1 1 180px" data-goto="rate">Rate this walk</button>
+        <button class="btn clickable" style="flex:1 1 180px" id="rebook-btn">Book ${esc(first(w))} again</button>
+      </div>
+    </div>`;
+  };
+
+  BODY.rate = () => {
+    const w = walker();
+    const dog = DOGS[bDogIdx];
+    const words = ['', 'Not good', 'Below par', 'Fine', 'Great walk', 'Perfect walk'];
+    return `<div class="col col-tight">
+      <div class="card" style="padding:26px">
+        <div style="text-align:center">
+          <div class="avatar" style="width:64px;height:64px;margin:0 auto 12px"><img src="${pic(w.pic)}" alt=""></div>
+          <h1 style="font-size:23px;margin-bottom:5px">How was ${esc(first(w))}?</h1>
+          <p class="muted" style="margin:0 0 16px;font-size:13.5px">Sunday's hour with ${esc(dog.name)}</p>
+          <div class="stars">${[1,2,3,4,5].map(n => `<button class="clickable${n<=rating?' on':''}" data-star="${n}">★</button>`).join('')}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--accent);margin-top:9px;min-height:20px">${words[rating]||''}</div>
+        </div>
+        <div style="height:1px;background:#F4E8DB;margin:18px 0"></div>
+        <h3 style="font-size:15px;margin-bottom:9px">What stood out?</h3>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">${TAG_LIST.map(t => chipEl(t, tags.includes(t), `data-tag="${esc(t)}"`)).join('')}</div>
+        <h3 style="font-size:15px;margin:18px 0 8px">Leave a review</h3>
+        <textarea class="field clickable" id="review-input" rows="3" placeholder="Other owners in Neve Tzedek will read this.">${esc(reviewText)}</textarea>
+        <div class="card" style="background:var(--soft);border-color:var(--soft-border);margin-top:18px">
+          <h3 style="font-size:15px;margin-bottom:3px">Add a tip</h3>
+          <p style="font-size:13px;color:#7A3418;margin:0 0 11px">100% goes to ${esc(first(w))}.</p>
+          <div style="display:flex;gap:7px;flex-wrap:wrap">${[0,10,20,30].map(v => `<button class="clickable" data-tip="${v}" style="padding:9px 17px;border-radius:12px;font-size:13.5px;font-weight:700;border:1.5px solid ${tip===v?'var(--accent)':'var(--soft-border)'};background:${tip===v?'var(--accent)':'#fff'};color:${tip===v?'#fff':'var(--ink)'}">${v===0?'No tip':'₪'+v}</button>`).join('')}</div>
+        </div>
+        <button class="btn primary block clickable" style="margin-top:18px" id="submit-rating">${tip>0?'Submit and tip ₪'+tip:'Submit review'}</button>
+        <button class="btn ghost block" style="margin-top:8px" data-goto="bookings">Maybe later</button>
+      </div>
+    </div>`;
+  };
+
+  BODY.chat = () => {
+    const threads = [WALKERS[0], WALKERS[4], WALKERS[2]];
+    const when = ['now', 'Fri', '12 Sep'];
+    const last = ['On our way back, he did great today', 'Thanks! See you Thursday', 'Happy to take Shoko Sunday morning'];
+    const w = walker(chatWalkerId);
+    const base = [
+      { me: 0, text: `Hi Yael! Just confirming ${bDate===0?'today':DAYS[bDate].label.split(',')[0]} at ${bTime} for ${DOGS[bDogIdx].name}.`, at: '14:02' },
+      { me: 1, text: 'Perfect. Code for the lockbox is 4417 — I will re-send it half an hour before.', at: '14:05' },
+      { me: 0, text: 'Got it. Anything different from last time?', at: '14:06' },
+      { me: 1, text: 'A bit stiff on the right hind leg since Friday. Nothing serious, just keep it gentle.', at: '14:09' },
+      { me: 0, text: 'Noted — I will keep us on flat ground and skip the stairs at the park.', at: '14:10' }
+    ].concat(extraMsgs);
+    return `<div class="col">
+      <h1 style="font-size:24px;margin-bottom:16px">Messages</h1>
+      <div class="chat-grid">
+        <div class="card" style="padding:9px">
+          ${threads.map((t,i) => `<div class="thread-row clickable${t.id===chatWalkerId?' on':''}" data-thread="${t.id}">
+            <div class="avatar" style="width:44px;height:44px"><img src="${pic(t.pic)}" alt=""></div>
+            <div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px"><span class="name">${esc(t.name)}</span><span class="muted" style="font-size:11px">${when[i]}</span></div><div class="last">${esc(last[i])}</div></div>
+          </div>`).join('')}
+        </div>
+        <div class="chat-panel">
+          <div class="chat-head">
+            <div class="avatar" style="width:38px;height:38px"><img src="${pic(w.pic)}" alt=""></div>
+            <div style="flex:1"><b style="font-family:'Outfit',sans-serif;font-size:15px">${esc(w.name)}</b><div style="font-size:12px;color:var(--green);font-weight:600">Usually replies in ${w.resp}</div></div>
+            <button class="btn clickable" style="padding:8px 13px;font-size:12.5px" data-goto="walker">Profile</button>
+          </div>
+          <div class="chat-msgs">${base.map(m => `<div class="msg-row${m.me?' me':''}"><div class="bubble">${esc(m.text)}</div></div>`).join('')}</div>
+          <div class="chat-input-row">
+            <input id="chat-input" placeholder="Write a message">
+            <button class="btn primary clickable" id="chat-send">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  BODY.bookings = () => {
+    const upcoming = [
+      { w: WALKERS[0], when: 'Today 18:42', dur: '60 min', status: 'In progress', on: 1, label: 'Track walk', go: 'live' },
+      { w: WALKERS[4], when: 'Thursday 08:00', dur: '45 min', status: 'Confirmed', on: 0, label: 'Details', go: 'walker' }
+    ];
+    const past = [
+      { w: WALKERS[8], when: 'Fri 18 Sep', paid: 80, rated: '★ 5.0 rated', label: 'Rebook', go: 'book' },
+      { w: WALKERS[2], when: 'Wed 16 Sep', paid: 96, rated: 'Not rated yet', label: 'Rate walk', go: 'rate' },
+      { w: WALKERS[0], when: 'Sun 13 Sep', paid: 81, rated: '★ 5.0 rated', label: 'See recap', go: 'recap' }
+    ];
+    return `<div class="col col-narrow">
+      <h1 style="font-size:24px;margin-bottom:18px">Your walks</h1>
+      <h3 style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin-bottom:11px">Upcoming</h3>
+      <div style="display:flex;flex-direction:column;gap:11px;margin-bottom:28px">${upcoming.map(b => `
+        <div class="booking-row">
+          <div class="avatar"><img src="${pic(b.w.pic)}" alt=""></div>
+          <div style="flex:1 1 150px;min-width:0"><b style="font-family:'Outfit',sans-serif;font-size:15.5px">${esc(b.w.name)}</b><div class="muted" style="font-size:13px;margin-top:2px">${b.when} · ${b.dur} with ${DOGS[bDogIdx].name}</div></div>
+          <div style="display:flex;gap:9px;align-items:center;margin-left:auto">
+            <span class="${b.on?'badge-green':'badge-blue'}">${b.status}</span>
+            <button class="btn primary clickable" style="padding:9px 15px;font-size:13px" data-goto="${b.go}">${b.label}</button>
+            <button class="btn clickable" style="padding:9px 14px;font-size:13px" data-goto="chat">Message</button>
+          </div>
+        </div>`).join('')}</div>
+      <h3 style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin-bottom:11px">Past</h3>
+      <div style="display:flex;flex-direction:column;gap:11px">${past.map(b => `
+        <div class="booking-row">
+          <div class="avatar" style="width:44px;height:44px"><img src="${pic(b.w.pic)}" alt=""></div>
+          <div style="flex:1 1 170px;min-width:0"><b style="font-family:'Outfit',sans-serif;font-size:15px">${esc(b.w.name)}</b><div class="muted" style="font-size:12.5px;margin-top:2px">${b.when} · ₪${b.paid} paid</div></div>
+          <div style="font-size:12.5px;font-weight:700;color:var(--slate)">${b.rated}</div>
+          <button class="btn clickable" style="padding:9px 14px;font-size:13px" data-goto="${b.go}">${b.label}</button>
+        </div>`).join('')}</div>
+    </div>`;
+  };
+
+  BODY.account = () => `<div class="col col-narrow">
+    <h1 style="font-size:24px;margin-bottom:18px">Account</h1>
+    <div class="account-grid">
+      <div class="card">
+        <div style="display:flex;gap:13px;align-items:center;margin-bottom:16px">
+          <div class="avatar" style="width:58px;height:58px"><img src="https://i.pravatar.cc/160?img=31" alt=""></div>
+          <div><b style="font-family:'Outfit',sans-serif;font-size:17px">Yael Bar</b><div class="muted" style="font-size:13px">yael@mail.com · member since 2025</div></div>
+        </div>
+        ${[['Phone','054-···-8821'],['Home','Shabazi 31, Neve Tzedek'],['Entry','Lockbox, code 4417'],['Emergency vet','Dr. Peled, Ahad Ha’am'],['Walk reminders','On · 30 min before']].map(([k,v]) => `<div class="account-row"><span class="muted" style="font-weight:600">${k}</span><b>${v}</b></div>`).join('')}
+        <button class="btn block clickable" style="margin-top:14px" id="logout-btn">Log out</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <h3 style="font-size:15.5px;margin-bottom:12px">My dogs</h3>
+          ${DOGS.map(d => `<div class="dog-row"><div class="avatar" style="width:46px;height:46px"><img src="${d.pic}" alt=""></div><div style="flex:1"><b style="font-size:14.5px">${esc(d.name)}</b><div class="muted" style="font-size:12.5px">${esc(d.breed)} · ${esc(d.meta)}</div></div><span class="clickable" style="font-size:12.5px;font-weight:700;color:var(--accent);cursor:pointer" data-edit-dog="1">Edit</span></div>`).join('')}
+          <button class="btn block clickable" style="border:1.5px dashed #E0C4AC;color:var(--accent)" data-goto="dogsetup">+ Add another dog</button>
+        </div>
+        <div class="card">
+          <h3 style="font-size:15.5px;margin-bottom:12px">Payment methods</h3>
+          ${[['Visa •••• 4242','Expires 08/29','DEFAULT',1],['Bit','Linked to 054-···-8821','BACKUP',0]].map(([label,sub,tag,on]) => `<div class="card-row"><div style="width:38px;height:26px;border-radius:6px;background:linear-gradient(135deg,#123255,#1E6FA8)"></div><div style="flex:1"><b style="font-size:14px">${label}</b><div class="muted" style="font-size:12px">${sub}</div></div><span class="${on?'badge-green':'badge-blue'}">${tag}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // =====================================================================
+  // Header + prompt
+  // =====================================================================
+  function renderHeader() {
+    const header = document.getElementById('header');
+    const authed = !ONBOARDING.has(screen);
+    header.hidden = !authed || inQuestionMode;
+    if (header.hidden) return;
+    const active = NAV_ACTIVE[screen] || screen;
+    document.getElementById('navrow').innerHTML = NAV.map(([label, key]) =>
+      `<button class="navlink clickable" data-goto="${key}" aria-current="${active === key}">${label}</button>`).join('');
+  }
+
+  function renderPrompt() {
+    const wrap = document.getElementById('prompt');
+    const goal = document.getElementById('task-goal');
+    const t = Study.currentTask();
+    const active = t && t.kind === 'app_route';
+    wrap.hidden = !Study.inBattery();
+    goal.innerHTML = active ? `
+      <div class="step">Your task</div>
+      <div class="goal">${Study.escapeHtml(t.goal_text)}</div>
+      ${Study.routeRetry ? '<div class="retry">Not the one we asked for — keep looking.</div>' : ''}
+      <button class="give-up" id="giveup-btn" data-give-up="1">I can't find it — move on</button>` : '';
+    const g = document.getElementById('giveup-btn');
+    if (g) g.addEventListener('click', () => Study.giveUp());
+  }
+
+  function renderBody() {
+    document.getElementById('body').innerHTML = (BODY[screen] || BODY.welcome)();
+  }
+
+  function render() {
+    renderPrompt();
+    renderHeader();
+    renderBody();
+  }
+
+  // =====================================================================
+  // Interaction
+  // =====================================================================
+  document.addEventListener('click', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    if (!t) return;
+
+    const authSubmit = t.closest('[data-auth-submit]');
+    if (authSubmit) { go(authSubmit.dataset.authSubmit === 'signup' ? 'dogsetup' : 'explore', 'auth:' + authSubmit.dataset.authSubmit); return; }
+
+    const goto = t.closest('[data-goto]');
+    if (goto) { go(goto.dataset.goto, 'nav:' + goto.dataset.goto); return; }
+
+    const back = t.closest('[data-back]');
+    if (back) { go(back.dataset.back, 'back'); return; }
+
+    if (t.closest('#finish-setup')) { go('explore', 'finish_setup'); return; }
+    if (t.closest('#change-photo')) { choose('change_photo', () => {}); return; }
+
+    const size = t.closest('[data-size]');
+    if (size) { choose('size:' + size.dataset.size, () => { dogSize = size.dataset.size; }); return; }
+
+    const trait = t.closest('[data-trait]');
+    if (trait) { const tr = trait.dataset.trait; choose('trait:' + tr, () => {
+      dogTraits = dogTraits.includes(tr) ? dogTraits.filter(x => x !== tr) : dogTraits.concat([tr]);
+    }); return; }
+
+    const viewBtn = t.closest('[data-view]');
+    if (viewBtn) { const v = viewBtn.dataset.view; choose('view:' + v, () => { view = v; }); return; }
+
+    const filter = t.closest('[data-filter]');
+    if (filter) { const k = filter.dataset.filter; choose('filter:' + k, () => { filters = { ...filters, [k]: !filters[k] }; }); return; }
+
+    const sort = t.closest('[data-sort]');
+    if (sort) { choose('sort:' + sort.dataset.sort, () => { sortKey = sort.dataset.sort; }); return; }
+
+    const open = t.closest('[data-open]');
+    if (open) { walkerId = Number(open.dataset.open); go('walker', 'open:' + walkerId); return; }
+
+    const book = t.closest('[data-book]');
+    if (book) { walkerId = Number(book.dataset.book); go('book', 'book:' + walkerId); return; }
+
+    const quickslot = t.closest('[data-quickslot]');
+    if (quickslot) {
+      const i = Number(quickslot.dataset.quickslot);
+      const presets = [[0, '16:00'], [1, '08:30'], [2, '10:00']];
+      const [d, tm] = presets[i];
+      bDate = d; bTime = tm;
+      go('book', 'quickslot:' + i);
+      return;
+    }
+
+    const day = t.closest('[data-day]');
+    if (day) { choose('day:' + day.dataset.day, () => { bDate = Number(day.dataset.day); }); return; }
+
+    const time = t.closest('[data-time]');
+    if (time) { choose('time:' + time.dataset.time, () => { bTime = time.dataset.time; }); return; }
+
+    const dur = t.closest('[data-dur]');
+    if (dur) { choose('dur:' + dur.dataset.dur, () => { bDur = Number(dur.dataset.dur); }); return; }
+
+    const dog = t.closest('[data-dog]');
+    if (dog) { choose('dog:' + dog.dataset.dog, () => { bDogIdx = Number(dog.dataset.dog); }); return; }
+
+    if (t.closest('#book-next')) { go('checkout', 'continue_to_payment'); return; }
+
+    const pay = t.closest('[data-pay]');
+    if (pay) { choose('pay:' + pay.dataset.pay, () => { payMethod = pay.dataset.pay; }); return; }
+
+    if (t.closest('#promo-apply')) {
+      const v = promo.trim();
+      choose('promo:' + (v ? 'applied' : 'empty'), () => { promoOk = v.toUpperCase() === 'FIRSTWALK' || v !== ''; });
+      return;
+    }
+
+    if (t.closest('#confirm-pay')) { go('confirmed', 'confirm_pay'); return; }
+    if (t.closest('#rebook-btn')) { go('book', 'rebook'); return; }
+
+    const star = t.closest('[data-star]');
+    if (star) { choose('star:' + star.dataset.star, () => { rating = Number(star.dataset.star); }); return; }
+
+    const tag = t.closest('[data-tag]');
+    if (tag) { const tg = tag.dataset.tag; choose('tag:' + tg, () => {
+      tags = tags.includes(tg) ? tags.filter(x => x !== tg) : tags.concat([tg]);
+    }); return; }
+
+    const tipBtn = t.closest('[data-tip]');
+    if (tipBtn) { choose('tip:' + tipBtn.dataset.tip, () => { tip = Number(tipBtn.dataset.tip); }); return; }
+
+    if (t.closest('#submit-rating')) { go('bookings', 'submit_rating'); return; }
+
+    const thread = t.closest('[data-thread]');
+    if (thread) { choose('thread:' + thread.dataset.thread, () => { chatWalkerId = Number(thread.dataset.thread); }); return; }
+
+    if (t.closest('#chat-send')) { sendChat(); return; }
+    if (t.closest('#logout-btn')) { go('welcome', 'logout'); return; }
+    if (t.closest('[data-edit-dog]')) { choose('edit_dog', () => {}); return; }
+  });
+
+  function sendChat() {
+    const input = document.getElementById('chat-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    if (record('msg:' + text)) return;
+    extraMsgs = extraMsgs.concat([{ me: 1, text, at: '14:12' }]);
+    render();
+    const box = document.getElementById('chat-input');
+    if (box) box.focus();
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (e.target.closest && e.target.closest('#chat-input')) { sendChat(); return; }
+  });
+
+  // Text fields update local state on input, but do not themselves write a
+  // selection row — only submitting (Enter, a button) is a choice, the
+  // same rule photo.html applies to its search box.
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.id === 'dog-name-input') dogName = t.value;
+    else if (t.id === 'dog-breed-input') dogBreed = t.value;
+    else if (t.id === 'dog-notes-input') dogNotes = t.value;
+    else if (t.id === 'q-input') { query = t.value; renderBody(); }
+    else if (t.id === 'b-notes') bNotes = t.value;
+    else if (t.id === 'promo-input') promo = t.value;
+    else if (t.id === 'review-input') reviewText = t.value;
+  });
+
+  // =====================================================================
+  // Preview / author / question-preview fit, same approach as photo.html.
+  // =====================================================================
+  if (PREVIEW) screen = PREVIEW;
+
+  if (Study.PREVIEW_MODE || Study.AUTHOR_MODE || Study.QUESTION_PREVIEW) {
+    const stage = document.querySelector('.stage');
+    stage.classList.add('fit');
+    const fit = () => {
+      const frame = document.getElementById('frame');
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const s = Math.min(vw / 1180, vh / 760, 1);
+      frame.style.transform = `scale(${s})`;
+      frame.style.left = `${Math.round((vw - 1180 * s) / 2)}px`;
+      frame.style.top = `${Math.round((vh - 760 * s) / 2)}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(document.documentElement);
+  }
+
+  render();
+
+  if (!TRACKING_OFF) {
+    (async () => {
+      const { offer } = await Study.startStudy();
+      if (offer) {
+        const wrap = document.getElementById('prompt');
+        wrap.hidden = false;
+        document.getElementById('task-goal').innerHTML = '<button class="give-up" id="start-tasks">Start the tasks →</button>';
+        document.getElementById('start-tasks').addEventListener('click', () => { Study.beginTasks(); });
+      }
+    })();
+  }
+</script>
+</body>
+</html>
