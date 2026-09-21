@@ -87,6 +87,9 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 49%,#6
 .photo-slot.is-over .ring{border-color:#7b2230;opacity:1}
 .photo-slot:focus-visible{outline:2px solid #1c2c4c;outline-offset:-2px}
 
+/* ---- the switcher is pinned to the bottom edge; clear a phone's home bar ---- */
+[style*="position:fixed;left:50%;bottom:20px"]{bottom:calc(20px + env(safe-area-inset-bottom,0px))!important}
+
 /* ---- keyboard focus, which inline styles alone never gave this prototype ---- */
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #1c2c4c;outline-offset:2px}
 
