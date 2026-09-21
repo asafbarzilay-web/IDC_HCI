@@ -1,0 +1,1117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apply for a passport — Republic of Marenta</title>
+<meta name="description" content="A clickable prototype of the Republic of Marenta passport service: apply for a first adult passport, book a biometric appointment and track the application.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2314181f'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23fff' stroke-width='1.4'/%3E%3Ctext x='16' y='20' text-anchor='middle' font-family='Georgia,serif' font-size='10' fill='%23fff'%3ERM%3C/text%3E%3C/svg%3E">
+
+<!--
+  Republic of Marenta passport service — a clickable, self-contained website
+  recreated from the Claude Design handoff Passport_Application_Form.html
+  (a bundled x-dc prototype: React + the dc-runtime + 1.1 MB of base64 fonts,
+  reassembled at load time from blob URLs).
+
+  Marenta is invented. Every name, reference number, fee and office in here is
+  prototype copy, not a real government service.
+
+  What changed on the way out of the bundle, and why:
+
+  * No React, no bundler. The prototype's markup is kept verbatim in the
+    <template> below — the same sc-if / sc-for / {{ }} / style-hover source the
+    handoff shipped — and ~150 lines of vanilla JS at the bottom compile it
+    once into real DOM. That drops the page from 1.1 MB to ~110 KB and lets it
+    be served as one static file.
+
+  * Bindings update in place instead of re-rendering. The handoff re-rendered
+    through React on every setState; here each {{ }} hole keeps its own node
+    and only that node is written. So the four screens stay mounted and hidden
+    (display:none), and anything typed into the form survives moving between
+    them — which the React version did not manage across screen switches.
+
+  * Fonts come from Google Fonts rather than 1 MB of inlined woff2, matching
+    the other apps in this repo.
+
+  * The screen lives in location.hash (#apply, #account, #appointment,
+    #confirmation), so a screen can be linked to and the back button works.
+
+  * Wired up, because they were dead ends in a handoff meant to be clicked:
+    the three "Edit" links in section 08 and "Go to section 05" on the account
+    screen now jump to their section, and the photograph slot accepts a real
+    file by click or drag (Replace / Remove drive it).
+
+  * Checkboxes and radios marked defaultChecked in the handoff are actually
+    checked here. Serialising the prototype lowercased the attribute to
+    "defaultchecked", which React then dropped, so the bundle rendered an
+    eligibility form with none of its own answers selected. The attribute is
+    honoured here, which is what the surrounding copy ("You are eligible to
+    apply", the prefilled names) describes.
+
+  * Still inert, as in the handoff: Guidance / Contact, the document View /
+    Replace / Choose file buttons, the calendar's month arrows, Download PDF,
+    Withdraw, Add to calendar, and the footer links.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet">
+
+<style>
+/* ---- base, carried over from the handoff's <helmet> ---- */
+body{margin:0;background:#f4f1ea;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#1c3a6e;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+a:hover{color:#7b2230}
+input,select,textarea,button{font-family:'IBM Plex Sans',system-ui,sans-serif}
+input::placeholder{color:#a2a8b2}
+select{appearance:none;background-image:linear-gradient(45deg,transparent 49%,#6b7280 50%),linear-gradient(-45deg,transparent 49%,#6b7280 50%);background-position:calc(100% - 17px) 18px,calc(100% - 12px) 18px;background-size:5px 5px;background-repeat:no-repeat}
+
+/* ---- the photograph slot (the handoff's <image-slot>, rebuilt without the
+       design-tool runtime: click or drop a file, Replace / Remove drive it).
+       The empty state keeps the component's own look: dashed ring, icon,
+       caption, and the browse line under it. ---- */
+.photo-slot{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:6px;text-align:center;padding:12px;cursor:pointer;overflow:hidden;
+  background:rgba(127,127,127,.08);color:#6b7280;user-select:none}
+.photo-slot svg{opacity:.45}
+.photo-slot .cap{max-width:90%;font:500 14.5px/1.35 'IBM Plex Sans',sans-serif;opacity:.75}
+.photo-slot .sub{font:400 11px/1.4 'IBM Plex Sans',sans-serif;opacity:.75}
+.photo-slot:hover .sub{opacity:1}
+.photo-slot .sub u{text-underline-offset:2px}
+.photo-slot .ring{position:absolute;inset:0;pointer-events:none;border:1.5px dashed currentColor;opacity:.35}
+.photo-slot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.photo-slot.is-filled .empty,.photo-slot.is-filled .ring{display:none}
+.photo-slot.is-over{outline:2px solid #7b2230;outline-offset:-2px;background:rgba(123,34,48,.08)}
+.photo-slot.is-over .ring{border-color:#7b2230;opacity:1}
+.photo-slot:focus-visible{outline:2px solid #1c2c4c;outline-offset:-2px}
+
+/* ---- keyboard focus, which inline styles alone never gave this prototype ---- */
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #1c2c4c;outline-offset:2px}
+
+/* ---- the handoff was laid out for a desktop window; these are the only rules
+       that touch its sizing, and only below 1080px. Everything the prototype
+       styles is styled inline, so an override has to be !important to land. ---- */
+@media (max-width:1080px){
+  #secnav{display:none!important}                    /* the section rail: the page scrolls instead */
+}
+@media (max-width:860px){
+  [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
+  [style*="grid-template-columns:repeat(3,1fr)"]{grid-template-columns:1fr!important}
+  [style*="grid-template-columns:1fr 200px"]{grid-template-columns:1fr!important}
+  [style*="grid-column:span 2"]{grid-column:span 1!important}   /* or the span rebuilds a second column */
+  [style*="width:352px"]{width:100%!important}
+  /* a column that asks for 250-440px takes a row of its own instead of squeezing */
+  [style*="min-width:440px"],[style*="min-width:420px"],[style*="min-width:320px"],
+  [style*="min-width:300px"],[style*="min-width:280px"],[style*="min-width:260px"],
+  [style*="min-width:250px"]{min-width:0!important;flex-basis:100%!important}
+  [style*="max-width:1320px"],[style*="max-width:1020px"]{padding-left:18px!important;padding-right:18px!important}
+  [style*="gap:56px"]{gap:0!important}
+  [style*="gap:40px"]{gap:22px!important}
+  /* the masthead and the two column pairs stack rather than squeeze */
+  [style*="padding:13px 32px"]{flex-wrap:wrap!important;padding:12px 18px!important;gap:10px!important}
+  [style*="margin-left:auto;display:flex"]{margin-left:0!important;flex-wrap:wrap!important;gap:14px!important}
+}
+@media (max-width:560px){
+  [style*="width:230px;flex:none"]{width:130px!important}   /* review rows keep two columns */
+  [style*="width:96px;flex:none"]{width:64px!important}
+  /* the prototype's screen switcher is wider than a phone; it scrolls instead */
+  [style*="position:fixed;left:50%;bottom:20px"]{max-width:calc(100vw - 24px);overflow-x:auto;
+    padding-left:10px!important;padding-right:6px!important}
+  [style*="position:fixed;left:50%;bottom:20px"]>span:first-child{display:none}
+  [style*="position:fixed;left:50%;bottom:20px"] button{padding:8px 10px!important;font-size:11.5px!important;white-space:nowrap}
+}
+</style>
+</head>
+<body>
+
+<noscript>
+  <div style="max-width:640px;margin:80px auto;padding:0 24px;font:400 15px/1.6 system-ui,sans-serif;color:#2a3038">
+    <h1 style="font:600 24px/1.2 Georgia,serif">Republic of Marenta — Passport Services</h1>
+    <p>This prototype is assembled in the browser, so it needs JavaScript switched on.</p>
+  </div>
+</noscript>
+
+<div id="app"></div>
+
+<!-- The handoff's markup, verbatim. sc-if / sc-for / {{ }} / style-hover are
+     compiled by the script at the foot of this file. -->
+<template id="tpl">
+<div style="min-height:100vh;background:#f4f1ea;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#2a3038;padding-bottom:90px">
+<div style="height:4px;background:#7b2230"></div>
+<header style="background:#14181f;color:#fff">
+<div style="max-width:1320px;margin:0 auto;padding:13px 32px;display:flex;align-items:center;gap:14px">
+<div style="width:38px;height:38px;flex:none;border-radius:50%;border:1.5px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font:600 13px/1 'Source Serif 4',Georgia,serif;letter-spacing:.06em">RM</div>
+<div style="display:flex;flex-direction:column;gap:3px">
+<div style="font:600 15px/1.1 'Source Serif 4',Georgia,serif">Republic of Marenta</div>
+<div style="font:500 10px/1.1 'IBM Plex Sans',sans-serif;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.6)">Department of Home Affairs · Passport Services</div>
+</div>
+<div style="margin-left:auto;display:flex;align-items:center;gap:22px">
+<a href="#s5" style="color:rgba(255,255,255,.78);font:400 13px/1 'IBM Plex Sans',sans-serif;text-decoration:none">Guidance</a>
+<a href="#s5" style="color:rgba(255,255,255,.78);font:400 13px/1 'IBM Plex Sans',sans-serif;text-decoration:none">Contact</a>
+<div style="display:flex;align-items:center;gap:10px;padding-left:22px;border-left:1px solid rgba(255,255,255,.16)">
+<div style="width:30px;height:30px;border-radius:50%;background:#7b2230;display:flex;align-items:center;justify-content:center;font:500 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.04em">PM</div>
+<div style="display:flex;flex-direction:column;gap:2px">
+<div style="font:500 12.5px/1.1 'IBM Plex Sans',sans-serif">Priya A. Matthews</div>
+<div style="font:400 10.5px/1.1 'IBM Plex Mono',monospace;color:rgba(255,255,255,.52)">CID 8842-1190</div>
+</div>
+</div>
+</div>
+</div>
+</header>
+
+<sc-if value="{{ isApply }}" hint-placeholder-val="{{ true }}">
+<div style="max-width:1320px;margin:0 auto;padding:0 32px">
+<div style="padding:26px 0 22px;border-bottom:1px solid #dcd7ca">
+<div style="display:flex;align-items:center;gap:8px;font:400 12px/1 'IBM Plex Sans',sans-serif;color:#5f6773;margin-bottom:14px">
+<a href="#" sc-camel-on-click="{{ goDash }}" style="color:#5f6773">Dashboard</a><span>›</span><span style="color:#2a3038">Apply for a passport</span>
+</div>
+<div style="display:flex;align-items:flex-end;gap:40px;flex-wrap:wrap">
+<div style="flex:1;min-width:320px">
+<h1 style="margin:0 0 10px;font:600 33px/1.15 'Source Serif 4',Georgia,serif;color:#14181f;letter-spacing:-.01em;text-wrap:pretty">Application for a first adult passport</h1>
+<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;font:400 12.5px/1 'IBM Plex Sans',sans-serif;color:#656e7a">
+<span style="font:500 12.5px/1 'IBM Plex Mono',monospace;color:#14181f;background:#eae5d9;padding:5px 8px;border-radius:3px">MR-2026-4471-08</span>
+<span>Form P-11 · 10-year validity</span><span style="color:#cfc9bb">|</span><span>Started 12 September 2026</span>
+<span style="display:flex;align-items:center;gap:6px;color:#2f6b4f"><span style="width:6px;height:6px;border-radius:50%;background:#2f6b4f"></span>All changes saved</span>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:9px;min-width:250px">
+<div style="display:flex;justify-content:space-between;font:500 11.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#656e7a"><span>Progress</span><span style="color:#14181f">3 of 8 sections</span></div>
+<div style="height:5px;background:#e2ddd0;border-radius:3px;overflow:hidden"><div style="width:37.5%;height:100%;background:#1c2c4c"></div></div>
+<div style="font:400 12px/1 'IBM Plex Sans',sans-serif;color:#5f6773">About 12 minutes remaining</div>
+</div>
+</div>
+</div>
+
+<div style="display:flex;gap:56px;align-items:flex-start;padding:34px 0 0">
+<nav id="secnav" style="position:sticky;top:22px;width:250px;flex:none;display:flex;flex-direction:column;gap:22px">
+<div>
+<div style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#6b7280;padding-left:14px;margin-bottom:11px">Sections</div>
+<div style="display:flex;flex-direction:column;border-left:1px solid #dcd7ca">
+<button sc-camel-on-click="{{ n1.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n1.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n1.fw }};background:{{ n1.bg }};color:{{ n1.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">01</span><span style="flex:1">Eligibility</span><span style="color:#2f6b4f;font-size:12px">✓</span></button>
+<button sc-camel-on-click="{{ n2.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n2.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n2.fw }};background:{{ n2.bg }};color:{{ n2.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">02</span><span style="flex:1">Personal details</span><span style="color:#2f6b4f;font-size:12px">✓</span></button>
+<button sc-camel-on-click="{{ n3.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n3.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n3.fw }};background:{{ n3.bg }};color:{{ n3.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">03</span><span style="flex:1">Address &amp; contact</span><span style="color:#2f6b4f;font-size:12px">✓</span></button>
+<button sc-camel-on-click="{{ n4.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n4.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n4.fw }};background:{{ n4.bg }};color:{{ n4.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">04</span><span style="flex:1">Photograph</span><span style="width:5px;height:5px;border-radius:50%;background:#8a5a1b;margin-bottom:3px"></span></button>
+<button sc-camel-on-click="{{ n5.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n5.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n5.fw }};background:{{ n5.bg }};color:{{ n5.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">05</span><span style="flex:1">Supporting documents</span><span style="width:5px;height:5px;border-radius:50%;border:1px solid #c4bdad;margin-bottom:3px"></span></button>
+<button sc-camel-on-click="{{ n6.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n6.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n6.fw }};background:{{ n6.bg }};color:{{ n6.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">06</span><span style="flex:1">Travel &amp; urgency</span><span style="width:5px;height:5px;border-radius:50%;border:1px solid #c4bdad;margin-bottom:3px"></span></button>
+<button sc-camel-on-click="{{ n7.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n7.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n7.fw }};background:{{ n7.bg }};color:{{ n7.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">07</span><span style="flex:1">Fee &amp; payment</span><span style="width:5px;height:5px;border-radius:50%;border:1px solid #c4bdad;margin-bottom:3px"></span></button>
+<button sc-camel-on-click="{{ n8.click }}" style="display:flex;align-items:baseline;gap:11px;text-align:left;border:none;border-left:2px solid {{ n8.bc }};margin-left:-1px;padding:9px 13px;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;line-height:1.3;font-weight:{{ n8.fw }};background:{{ n8.bg }};color:{{ n8.fg }}"><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.5;color:#6b7280">08</span><span style="flex:1">Review &amp; declaration</span><span style="width:5px;height:5px;border-radius:50%;border:1px solid #c4bdad;margin-bottom:3px"></span></button>
+</div>
+</div>
+<div style="padding:16px 17px;background:#ebe7dc;border:1px solid #e2ddd0;border-radius:4px">
+<div style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:7px">Your progress is saved</div>
+<p style="margin:0 0 12px;font:400 12.5px/1.55 'IBM Plex Sans',sans-serif;color:#5a6270">You may leave this form at any time and resume within 60 days.</p>
+<button sc-camel-on-click="{{ goDash }}" style="width:100%;padding:9px;background:#fffdf8;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer" style-hover="border-color:#1c2c4c">Save and exit</button>
+</div>
+<div style="font:400 11.5px/1.55 'IBM Plex Sans',sans-serif;color:#6b7280;padding:0 2px">Need help? Call the Passport Enquiry Line on <span style="font-family:'IBM Plex Mono',monospace;color:#5a6270">0800 114 220</span>, Monday to Friday, 08:00–18:00.</div>
+</nav>
+
+<div style="flex:1;min-width:0;max-width:820px">
+
+<section id="s1" data-screen-label="01 Eligibility" style="scroll-margin-top:96px;padding-bottom:40px;border-bottom:1px solid #e2ddd0;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">01</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Eligibility</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">Answer three questions so we can confirm this is the correct application form for you. Providing false information is an offence under section 24 of the Passports Act.</p>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:8px 28px 26px">
+<div style="padding:22px 0;border-bottom:1px solid #eee9dd">
+<div style="font:500 15px/1.4 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:4px">Are you aged 18 or over?</div>
+<div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-bottom:13px">Applicants under 18 must use form P-12 and provide parental consent.</div>
+<div style="display:flex;gap:10px">
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="q_age" defaultchecked="" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Yes</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="q_age" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>No</span></label>
+</div>
+</div>
+<div style="padding:22px 0;border-bottom:1px solid #eee9dd">
+<div style="font:500 15px/1.4 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:4px">Are you a citizen of the Republic of Marenta?</div>
+<div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-bottom:13px">By birth, descent, naturalisation or registration.</div>
+<div style="display:flex;gap:10px">
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="q_cit" defaultchecked="" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Yes</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="q_cit" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>No</span></label>
+</div>
+</div>
+<div style="padding:22px 0 24px">
+<div style="font:500 15px/1.4 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:4px">Have you ever held a Marentan passport?</div>
+<div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-bottom:13px">Including a passport that was lost, stolen, expired or cancelled.</div>
+<div style="display:flex;gap:10px">
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="q_prior" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Yes</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="q_prior" defaultchecked="" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>No</span></label>
+</div>
+</div>
+<div style="display:flex;gap:13px;align-items:flex-start;padding:15px 17px;background:#f0f4f1;border:1px solid #cddcd2;border-radius:3px">
+<span style="color:#2f6b4f;font:500 14px/1.3 'IBM Plex Sans',sans-serif">✓</span>
+<div><div style="font:600 13.5px/1.4 'IBM Plex Sans',sans-serif;color:#1f4a37">You are eligible to apply for a first adult passport</div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#3d5b4c;margin-top:3px">Form P-11 is the correct form. Your answers have been recorded at 09:42 on 12 September 2026.</div></div>
+</div>
+</div>
+</section>
+
+<section id="s2" data-screen-label="02 Personal details" style="scroll-margin-top:96px;padding-bottom:40px;border-bottom:1px solid #e2ddd0;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">02</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Personal details</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">Enter your details exactly as they appear on your full birth certificate. These details will be printed in your passport and cannot be changed after submission.</p>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:26px 28px">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 22px">
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Given names <span style="color:#7b2230">*</span></label><input sc-camel-default-value="Priya Ann" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Family name <span style="color:#7b2230">*</span></label><input sc-camel-default-value="Matthews" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="grid-column:span 2;display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Any other names you have been known by</label><input placeholder="Leave blank if none" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><span style="font:400 12px/1.45 'IBM Plex Sans',sans-serif;color:#5f6773">Include maiden names, previous married names and names used in other documents.</span></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Date of birth <span style="color:#7b2230">*</span></label>
+<div style="display:flex;gap:9px"><input sc-camel-default-value="04" sc-camel-max-length="2" style="width:62px;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;text-align:center" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><input sc-camel-default-value="11" sc-camel-max-length="2" style="width:62px;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;text-align:center" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><input sc-camel-default-value="1998" sc-camel-max-length="4" style="width:84px;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;text-align:center" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><span style="align-self:center;font:400 12px/1.3 'IBM Plex Sans',sans-serif;color:#6b7280">DD / MM / YYYY</span></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Sex as recorded at birth <span style="color:#7b2230">*</span></label><sc-raw-select sc-camel-default-value="F" style="width:100%;padding:11px 34px 11px 12px;border:1px solid #cfc9bb;border-radius:3px;background-color:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><option value="F">Female</option><option value="M">Male</option><option value="X">Unspecified (X)</option></sc-raw-select></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Town or city of birth <span style="color:#7b2230">*</span></label><input sc-camel-default-value="Halveston" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Country of birth <span style="color:#7b2230">*</span></label><sc-raw-select sc-camel-default-value="MR" style="width:100%;padding:11px 34px 11px 12px;border:1px solid #cfc9bb;border-radius:3px;background-color:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><option value="MR">Republic of Marenta</option><option value="OT">Other country</option></sc-raw-select></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Height <span style="color:#7b2230">*</span></label><div style="display:flex;align-items:center;gap:9px"><input sc-camel-default-value="168" style="width:88px;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;text-align:center" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><span style="font:400 13.5px/1 'IBM Plex Sans',sans-serif;color:#5f6773">centimetres</span></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Occupation</label><input sc-camel-default-value="Civil engineer" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="grid-column:span 2;height:1px;background:#eee9dd;margin:4px 0"></div>
+<div style="grid-column:span 2;font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#7b2230">Parents' details</div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Mother's full name at her birth <span style="color:#7b2230">*</span></label><input sc-camel-default-value="Elena Rose Carthy" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Father's full name at his birth</label><input sc-camel-default-value="Daniel John Matthews" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+</div>
+</div>
+</section>
+
+<section id="s3" data-screen-label="03 Address and contact" style="scroll-margin-top:96px;padding-bottom:40px;border-bottom:1px solid #e2ddd0;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">03</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Address &amp; contact</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">We will use these details to contact you about your application and, if you choose courier delivery, to send your passport.</p>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:26px 28px">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 22px">
+<div style="grid-column:span 2;display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Address line 1 <span style="color:#7b2230">*</span></label><input sc-camel-default-value="14 Ardwick Terrace" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="grid-column:span 2;display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Address line 2</label><input placeholder="Optional" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Town or city <span style="color:#7b2230">*</span></label><input sc-camel-default-value="Halveston" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Province <span style="color:#7b2230">*</span></label><sc-raw-select sc-camel-default-value="NH" style="width:100%;padding:11px 34px 11px 12px;border:1px solid #cfc9bb;border-radius:3px;background-color:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><option value="NH">Northern Halvest</option><option value="CM">Central Marenta</option><option value="ES">Eastern Shore</option><option value="LP">Lowland Province</option></sc-raw-select></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Postcode <span style="color:#7b2230">*</span></label><input sc-camel-default-value="HV4 2LN" style="width:130px;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;letter-spacing:.04em" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Living here since <span style="color:#7b2230">*</span></label><input sc-camel-default-value="03 / 2021" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<label style="grid-column:span 2;display:flex;align-items:flex-start;gap:11px;padding:13px 15px;background:#f7f5ef;border:1px solid #eee9dd;border-radius:3px;cursor:pointer"><input type="checkbox" defaultchecked="" style="accent-color:#1c2c4c;width:16px;height:16px;margin:1px 0 0"><span style="font:400 13.5px/1.45 'IBM Plex Sans',sans-serif;color:#2a3038">My postal address is the same as the address above</span></label>
+<div style="grid-column:span 2;height:1px;background:#eee9dd;margin:4px 0"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Mobile telephone <span style="color:#7b2230">*</span></label><input sc-camel-default-value="+59 7 4410 8823" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Email address <span style="color:#7b2230">*</span></label><input sc-camel-default-value="p.matthews@mailbox.mr" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"><span style="display:flex;align-items:center;gap:6px;font:400 12px/1.4 'IBM Plex Sans',sans-serif;color:#2f6b4f">✓ Verified on 12 September 2026</span></div>
+<div style="grid-column:span 2;display:flex;flex-direction:column;gap:9px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">How should we contact you about this application?</label>
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+<label style="display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="contact" defaultchecked="" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Email and SMS</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="contact" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Email only</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="contact" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Post</span></label>
+</div></div>
+</div>
+</div>
+</section>
+
+<section id="s4" data-screen-label="04 Photograph" style="scroll-margin-top:96px;padding-bottom:40px;border-bottom:1px solid #e2ddd0;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">04</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Photograph</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">Upload one digital photograph taken within the last six months. It is checked automatically against the international standard for machine-readable travel documents.</p>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:26px 28px">
+<div style="display:flex;gap:30px;align-items:flex-start;flex-wrap:wrap">
+<div style="flex:none;display:flex;flex-direction:column;gap:10px">
+<div style="position:relative;width:210px;height:270px;background:#f0ede5;border:1px solid #cfc9bb">
+<image-slot id="pp-photo" shape="rect" placeholder="Drop the applicant photograph" style="width:100%;height:100%"></image-slot>
+<sc-if value="{{ photoGuides }}" hint-placeholder-val="{{ true }}">
+<div style="position:absolute;inset:0;pointer-events:none">
+<div style="position:absolute;left:0;right:0;top:9%;border-top:1px dashed rgba(123,34,48,.55)"></div>
+<div style="position:absolute;left:0;right:0;bottom:13%;border-top:1px dashed rgba(123,34,48,.55)"></div>
+<div style="position:absolute;top:0;bottom:0;left:50%;border-left:1px dashed rgba(28,44,76,.35)"></div>
+<div style="position:absolute;left:6px;top:9%;transform:translateY(-100%);font:400 9.5px/1.4 'IBM Plex Mono',monospace;color:#7b2230">CROWN</div>
+<div style="position:absolute;left:6px;bottom:13%;transform:translateY(100%);font:400 9.5px/1.4 'IBM Plex Mono',monospace;color:#7b2230">CHIN</div>
+</div>
+</sc-if>
+</div>
+<div style="display:flex;justify-content:space-between;font:400 11px/1 'IBM Plex Mono',monospace;color:#6b7280"><span>35 × 45 mm</span><span>600 × 771 px</span></div>
+<div style="display:flex;gap:8px"><button sc-camel-on-click="{{ photoReplace }}" style="flex:1;padding:9px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer" style-hover="border-color:#1c2c4c">Replace</button><button sc-camel-on-click="{{ photoRemove }}" style="flex:1;padding:9px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#7b2230;cursor:pointer" style-hover="border-color:#7b2230">Remove</button></div>
+</div>
+<div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:16px">
+<div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:11px"><div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280">Automated checks</div><div style="font:400 11.5px/1 'IBM Plex Mono',monospace;color:#6b7280">5 of 6 passed</div></div>
+<div style="display:flex;flex-direction:column;border:1px solid #eee9dd;border-radius:3px;overflow:hidden">
+<div style="display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid #f2eee2"><span style="color:#2f6b4f;font-size:13px">✓</span><span style="flex:1;font:400 13.5px/1.3 'IBM Plex Sans',sans-serif;color:#2a3038">Plain, light background</span><span style="font:400 11px/1 'IBM Plex Mono',monospace;color:#6b7280">PASS</span></div>
+<div style="display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid #f2eee2"><span style="color:#2f6b4f;font-size:13px">✓</span><span style="flex:1;font:400 13.5px/1.3 'IBM Plex Sans',sans-serif;color:#2a3038">Face centred and looking forward</span><span style="font:400 11px/1 'IBM Plex Mono',monospace;color:#6b7280">PASS</span></div>
+<div style="display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid #f2eee2"><span style="color:#2f6b4f;font-size:13px">✓</span><span style="flex:1;font:400 13.5px/1.3 'IBM Plex Sans',sans-serif;color:#2a3038">Eyes open, no obstruction</span><span style="font:400 11px/1 'IBM Plex Mono',monospace;color:#6b7280">PASS</span></div>
+<div style="display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid #f2eee2"><span style="color:#2f6b4f;font-size:13px">✓</span><span style="flex:1;font:400 13.5px/1.3 'IBM Plex Sans',sans-serif;color:#2a3038">Neutral expression, mouth closed</span><span style="font:400 11px/1 'IBM Plex Mono',monospace;color:#6b7280">PASS</span></div>
+<div style="display:flex;align-items:center;gap:11px;padding:11px 14px;border-bottom:1px solid #f2eee2"><span style="color:#2f6b4f;font-size:13px">✓</span><span style="flex:1;font:400 13.5px/1.3 'IBM Plex Sans',sans-serif;color:#2a3038">Resolution and file size</span><span style="font:400 11px/1 'IBM Plex Mono',monospace;color:#6b7280">PASS</span></div>
+<div style="display:flex;align-items:flex-start;gap:11px;padding:12px 14px;background:#fbf5eb"><span style="color:#8a5a1b;font-size:13px;line-height:1.4">!</span><div style="flex:1"><div style="font:500 13.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Shadow detected on the left cheek</div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#6d5a3d;margin-top:3px">This will not prevent submission, but an examiner may request a replacement. Consider retaking the photograph facing an even light source.</div></div><span style="font:400 11px/1 'IBM Plex Mono',monospace;color:#8a5a1b">WARN</span></div>
+</div>
+</div>
+<div style="padding:15px 17px;background:#f7f5ef;border:1px solid #eee9dd;border-radius:3px">
+<div style="font:600 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:8px">Requirements</div>
+<div style="display:flex;flex-direction:column;gap:5px;font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5a6270">
+<div>· Taken within the last six months, in colour</div>
+<div>· Head, including hair, measuring 29–34 mm from crown to chin</div>
+<div>· No head covering, except for religious or medical reasons</div>
+<div>· JPEG or PNG, between 250 KB and 6 MB</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<section id="s5" data-screen-label="05 Supporting documents" style="scroll-margin-top:96px;padding-bottom:40px;border-bottom:1px solid #e2ddd0;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">05</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Supporting documents</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">Upload a scan or photograph of each document. You must also bring the original of every document to your biometric appointment.</p>
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:18px 22px;display:flex;align-items:center;gap:18px">
+<div style="width:38px;height:46px;flex:none;border:1px solid #cfc9bb;background:#f4f1ea;display:flex;align-items:center;justify-content:center;font:400 9px/1 'IBM Plex Mono',monospace;color:#6b7280">PDF</div>
+<div style="flex:1;min-width:0">
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Full birth certificate</span><span style="padding:3px 7px;background:#eaf0ec;color:#1f4a37;border-radius:2px;font:500 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.06em;text-transform:uppercase">Verified</span></div>
+<div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">birth-certificate-matthews.pdf · 1.8 MB · uploaded 12 Sept 2026</div>
+</div>
+<div style="display:flex;gap:8px;flex:none"><button style="padding:8px 14px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer" style-hover="border-color:#1c2c4c">View</button><button style="padding:8px 14px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#5a6270;cursor:pointer" style-hover="border-color:#1c2c4c">Replace</button></div>
+</div>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:18px 22px;display:flex;align-items:center;gap:18px">
+<div style="width:38px;height:46px;flex:none;border:1px solid #cfc9bb;background:#f4f1ea;display:flex;align-items:center;justify-content:center;font:400 9px/1 'IBM Plex Mono',monospace;color:#6b7280">JPG</div>
+<div style="flex:1;min-width:0">
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">National identity card</span><span style="padding:3px 7px;background:#fbf5eb;color:#6d5a3d;border-radius:2px;font:500 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.06em;text-transform:uppercase">Checking</span></div>
+<div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">nid-front-back.jpg · 3.1 MB · verification usually takes under an hour</div>
+</div>
+<div style="display:flex;gap:8px;flex:none"><button style="padding:8px 14px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer" style-hover="border-color:#1c2c4c">View</button><button style="padding:8px 14px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#5a6270;cursor:pointer" style-hover="border-color:#1c2c4c">Replace</button></div>
+</div>
+<div style="background:#fffdf8;border:1px dashed #c4bdad;border-radius:4px;padding:26px 22px;display:flex;align-items:center;gap:18px">
+<div style="flex:1;min-width:0">
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Proof of residence</span><span style="padding:3px 7px;background:#f6ecee;color:#7b2230;border-radius:2px;font:500 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.06em;text-transform:uppercase">Required</span></div>
+<div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:4px">A utility bill, bank statement or tenancy agreement dated within the last three months. Drag a file here or choose one from your device.</div>
+</div>
+<button style="flex:none;padding:11px 20px;background:#1c2c4c;border:none;border-radius:3px;font:500 13px/1 'IBM Plex Sans',sans-serif;color:#fff;cursor:pointer" style-hover="background:#14213b">Choose file</button>
+</div>
+<div style="display:flex;gap:12px;align-items:flex-start;padding:15px 18px;background:#eef1f5;border:1px solid #d3dae4;border-radius:3px">
+<span style="color:#1c3a6e;font:500 13px/1.4 'IBM Plex Sans',sans-serif">i</span>
+<div style="font:400 12.5px/1.55 'IBM Plex Sans',sans-serif;color:#33425c">Originals are inspected and returned at your appointment. Documents in a language other than Marentan must be accompanied by a certified translation.</div>
+</div>
+</div>
+</section>
+
+<section id="s6" data-screen-label="06 Travel and urgency" style="scroll-margin-top:96px;padding-bottom:40px;border-bottom:1px solid #e2ddd0;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">06</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Travel plans &amp; urgency</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">Do not book non-refundable travel until your passport has been issued. Your choices here affect the fee shown in section 07.</p>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:26px 28px;display:flex;flex-direction:column;gap:24px">
+<div>
+<div style="font:500 15px/1.4 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:12px">Do you have travel already booked?</div>
+<div style="display:flex;gap:10px;margin-bottom:16px">
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="travel" defaultchecked="" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Yes</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 14px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="travel" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>No</span></label>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 22px">
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Date of departure</label><input sc-camel-default-value="18 / 11 / 2026" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">First country of travel</label><input sc-camel-default-value="Portugal" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+</div>
+</div>
+<div style="height:1px;background:#eee9dd"></div>
+<div>
+<div style="font:500 15px/1.4 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:12px">Processing speed</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<label style="display:flex;align-items:flex-start;gap:13px;padding:16px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff" style-hover="border-color:#1c2c4c"><input type="radio" name="speed" defaultchecked="" sc-camel-on-change="{{ setStandard }}" style="accent-color:#1c2c4c;width:16px;height:16px;margin:2px 0 0"><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:12px"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Standard service</span><span style="font:500 14px/1.3 'IBM Plex Mono',monospace;color:#14181f">included</span></div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">Passport issued within 3 weeks of your biometric appointment.</div></div></label>
+<label style="display:flex;align-items:flex-start;gap:13px;padding:16px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff" style-hover="border-color:#1c2c4c"><input type="radio" name="speed" sc-camel-on-change="{{ setExpress }}" style="accent-color:#1c2c4c;width:16px;height:16px;margin:2px 0 0"><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:12px"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Expedited service</span><span style="font:500 14px/1.3 'IBM Plex Mono',monospace;color:#14181f">+ $60.00</span></div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">Passport issued within 8 working days. Requires an appointment at a regional office.</div></div></label>
+</div>
+</div>
+<div style="height:1px;background:#eee9dd"></div>
+<div>
+<div style="font:500 15px/1.4 'IBM Plex Sans',sans-serif;color:#14181f;margin-bottom:12px">Delivery of your passport</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<label style="display:flex;align-items:flex-start;gap:13px;padding:16px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff" style-hover="border-color:#1c2c4c"><input type="radio" name="del" defaultchecked="" sc-camel-on-change="{{ setCollect }}" style="accent-color:#1c2c4c;width:16px;height:16px;margin:2px 0 0"><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:12px"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Collect at the passport office</span><span style="font:500 14px/1.3 'IBM Plex Mono',monospace;color:#14181f">free</span></div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">Available for 30 days from issue. Photographic identification required.</div></div></label>
+<label style="display:flex;align-items:flex-start;gap:13px;padding:16px 18px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff" style-hover="border-color:#1c2c4c"><input type="radio" name="del" sc-camel-on-change="{{ setCourier }}" style="accent-color:#1c2c4c;width:16px;height:16px;margin:2px 0 0"><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:12px"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Tracked courier</span><span style="font:500 14px/1.3 'IBM Plex Mono',monospace;color:#14181f">+ $19.50</span></div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">Signature required on delivery to 14 Ardwick Terrace, Halveston.</div></div></label>
+</div>
+</div>
+</div>
+</section>
+
+<section id="s7" data-screen-label="07 Fee and payment" style="scroll-margin-top:96px;padding-bottom:40px;border-bottom:1px solid #e2ddd0;margin-bottom:40px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">07</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Fee &amp; payment</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">The fee is payable when you submit the application and is not refundable once examination has begun.</p>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;overflow:hidden">
+<div style="padding:24px 28px;background:#f7f5ef;border-bottom:1px solid #e2ddd0">
+<div style="display:flex;justify-content:space-between;padding:8px 0;font:400 14px/1.4 'IBM Plex Sans',sans-serif;color:#2a3038"><span>First adult passport, 10-year validity, 34 pages</span><span style="font-family:'IBM Plex Mono',monospace">$ {{ fee.base }}</span></div>
+<div style="display:flex;justify-content:space-between;padding:8px 0;font:400 14px/1.4 'IBM Plex Sans',sans-serif;color:#2a3038"><span>Expedited processing</span><span style="font-family:'IBM Plex Mono',monospace">$ {{ fee.exp }}</span></div>
+<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e2ddd0;font:400 14px/1.4 'IBM Plex Sans',sans-serif;color:#2a3038"><span>Delivery</span><span style="font-family:'IBM Plex Mono',monospace">{{ fee.del }}</span></div>
+<div style="display:flex;justify-content:space-between;align-items:baseline;padding:15px 0 0"><span style="font:600 12px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280">Total payable</span><span style="font:500 27px/1 'IBM Plex Mono',monospace;color:#14181f">$ {{ fee.total }}</span></div>
+</div>
+<div style="padding:26px 28px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:12px">Method of payment</div>
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px">
+<label style="display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="pay" defaultchecked="" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Debit or credit card</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="pay" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Bank transfer</span></label>
+<label style="display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff;font:500 13.5px/1 'IBM Plex Sans',sans-serif" style-hover="border-color:#1c2c4c"><input type="radio" name="pay" style="accent-color:#1c2c4c;width:15px;height:15px;margin:0"><span>Pay at the office</span></label>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px 22px">
+<div style="grid-column:span 2;display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Name on card <span style="color:#7b2230">*</span></label><input sc-camel-default-value="P A MATTHEWS" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Sans',sans-serif;color:#14181f;letter-spacing:.04em" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="grid-column:span 2;display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Card number <span style="color:#7b2230">*</span></label><input sc-camel-default-value="4921  •••• ••••  7738" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;letter-spacing:.06em" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Expiry <span style="color:#7b2230">*</span></label><input sc-camel-default-value="09 / 29" style="width:110px;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;text-align:center" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Security code <span style="color:#7b2230">*</span></label><input sc-camel-default-value="•••" style="width:92px;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#14181f;text-align:center" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<label style="grid-column:span 2;display:flex;align-items:flex-start;gap:11px;cursor:pointer"><input type="checkbox" defaultchecked="" style="accent-color:#1c2c4c;width:16px;height:16px;margin:1px 0 0"><span style="font:400 13.5px/1.45 'IBM Plex Sans',sans-serif;color:#2a3038">Billing address is the same as my residential address</span></label>
+</div>
+<div style="display:flex;align-items:center;gap:9px;margin-top:18px;font:400 12px/1.4 'IBM Plex Sans',sans-serif;color:#5f6773"><span style="font-family:'IBM Plex Mono',monospace;color:#2f6b4f">SSL</span>Payment is processed by the Government Payment Service. Card details are not stored by this department.</div>
+</div>
+</div>
+</section>
+
+<section id="s8" data-screen-label="08 Review and declaration" style="scroll-margin-top:96px;padding-bottom:16px">
+<div style="display:flex;align-items:baseline;gap:13px;margin-bottom:8px"><span style="font:500 12px/1 'IBM Plex Mono',monospace;color:#7b2230;letter-spacing:.08em">08</span><h2 style="margin:0;font:600 25px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">Review &amp; declaration</h2></div>
+<p style="margin:0 0 20px;max-width:62ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">Check every entry. Details printed in a passport cannot be amended after issue except by applying for a replacement at full fee.</p>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;overflow:hidden;margin-bottom:14px">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid #e2ddd0;background:#f7f5ef"><span style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280">Applicant</span><a href="#s2" style="font:500 12.5px/1 'IBM Plex Sans',sans-serif">Edit</a></div>
+<div style="padding:8px 24px 18px">
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Full name</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">Priya Ann Matthews</span></div>
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Date and place of birth</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">4 November 1998 · Halveston, Marenta</span></div>
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Sex · Height</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">Female · 168 cm</span></div>
+<div style="display:flex;padding:10px 0"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Parents</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">Elena Rose Carthy · Daniel John Matthews</span></div>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-top:1px solid #e2ddd0;border-bottom:1px solid #e2ddd0;background:#f7f5ef"><span style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280">Contact &amp; delivery</span><a href="#s3" style="font:500 12.5px/1 'IBM Plex Sans',sans-serif">Edit</a></div>
+<div style="padding:8px 24px 18px">
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Residential address</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">14 Ardwick Terrace, Halveston, HV4 2LN</span></div>
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Email · Mobile</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">p.matthews@mailbox.mr · +59 7 4410 8823</span></div>
+<div style="display:flex;padding:10px 0"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Delivery</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">{{ deliveryLabel }}</span></div>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-top:1px solid #e2ddd0;border-bottom:1px solid #e2ddd0;background:#f7f5ef"><span style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280">Documents, service &amp; fee</span><a href="#s5" style="font:500 12.5px/1 'IBM Plex Sans',sans-serif">Edit</a></div>
+<div style="padding:8px 24px 20px">
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Photograph</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">Accepted with 1 advisory note</span></div>
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Supporting documents</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#7b2230">2 of 3 supplied — proof of residence outstanding</span></div>
+<div style="display:flex;padding:10px 0;border-bottom:1px solid #f2eee2"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Service</span><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">{{ speedLabel }}</span></div>
+<div style="display:flex;padding:10px 0;align-items:baseline"><span style="width:230px;flex:none;font:400 13px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Total payable</span><span style="font:500 15px/1.4 'IBM Plex Mono',monospace;color:#14181f">$ {{ fee.total }}</span></div>
+</div>
+</div>
+<div style="position:relative;background:#fffdf8;border:1px solid #cfc9bb;border-radius:4px;padding:26px 28px;overflow:hidden">
+<div style="position:absolute;right:-24px;top:-24px;width:168px;height:168px;border-radius:50%;border:12px solid rgba(123,34,48,.05);pointer-events:none"></div>
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#7b2230;margin-bottom:12px">Declaration</div>
+<p style="margin:0 0 6px;max-width:66ch;font:400 14px/1.65 'Source Serif 4',Georgia,serif;color:#2a3038;text-wrap:pretty">I declare that I am a citizen of the Republic of Marenta, that the information given in this application is true and complete, and that the photograph submitted is a true likeness of me. I understand that making a statement I know to be false is an offence punishable by a fine, imprisonment, or both, and may result in the refusal or cancellation of a passport.</p>
+<p style="margin:0 0 20px;max-width:66ch;font:400 12.5px/1.6 'IBM Plex Sans',sans-serif;color:#5f6773">Your details will be checked against civil registration and law-enforcement records in accordance with the Passports Act and the Data Protection Act.</p>
+<label style="display:flex;align-items:flex-start;gap:12px;padding:15px 17px;background:#f7f5ef;border:1px solid #e2ddd0;border-radius:3px;cursor:pointer;margin-bottom:20px"><input type="checkbox" sc-camel-on-change="{{ toggleDeclared }}" style="accent-color:#7b2230;width:17px;height:17px;margin:1px 0 0"><span style="font:500 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#14181f">I have read and agree to the declaration above, and I confirm that I am the person named in this application.</span></label>
+<div style="display:grid;grid-template-columns:1fr 200px;gap:22px;align-items:end">
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Signed (type your full name) <span style="color:#7b2230">*</span></label><input placeholder="Priya Ann Matthews" style="width:100%;padding:11px 12px;border:1px solid #cfc9bb;border-radius:3px;background:#fff;font:400 17px/1.3 'Source Serif 4',Georgia,serif;color:#14181f" style-focus="border-color:#1c2c4c;box-shadow:0 0 0 3px rgba(28,44,76,.13);outline:none"></div>
+<div style="display:flex;flex-direction:column;gap:6px"><label style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;text-transform:uppercase;color:#6b7280">Date</label><input sc-camel-default-value="21 / 09 / 2026" readonly="" style="width:100%;padding:11px 12px;border:1px solid #e2ddd0;border-radius:3px;background:#f4f1ea;font:400 15px/1.3 'IBM Plex Mono',monospace;color:#5a6270"></div>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:24px">
+<button sc-camel-on-click="{{ goAppt }}" style="padding:15px 30px;background:#7b2230;border:none;border-radius:3px;font:600 15px/1 'IBM Plex Sans',sans-serif;color:#fff;cursor:pointer;letter-spacing:.01em" style-hover="background:#661a26">Submit application and pay $ {{ fee.total }}</button>
+<button sc-camel-on-click="{{ goDash }}" style="padding:15px 24px;background:none;border:1px solid #cfc9bb;border-radius:3px;font:500 14px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer;background:#fffdf8" style-hover="border-color:#1c2c4c">Save and exit</button>
+<span style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;flex:1;min-width:200px">You will be asked to book a biometric appointment immediately after payment.</span>
+</div>
+</section>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isDash }}">
+<div style="max-width:1320px;margin:0 auto;padding:30px 32px 0">
+<h1 style="margin:0 0 6px;font:600 31px/1.15 'Source Serif 4',Georgia,serif;color:#14181f;letter-spacing:-.01em">Your passport account</h1>
+<p style="margin:0 0 26px;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270">One application is open. Applications not submitted within 60 days of starting are deleted.</p>
+<div style="display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap">
+<div style="flex:1;min-width:420px;display:flex;flex-direction:column;gap:18px">
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;overflow:hidden">
+<div style="display:flex;align-items:center;gap:12px;padding:14px 26px;background:#14181f;color:#fff"><span style="font:500 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.13em;text-transform:uppercase">In progress</span><span style="margin-left:auto;font:400 12px/1 'IBM Plex Mono',monospace;color:rgba(255,255,255,.65)">MR-2026-4471-08</span></div>
+<div style="padding:26px">
+<h2 style="margin:0 0 4px;font:600 22px/1.25 'Source Serif 4',Georgia,serif;color:#14181f">First adult passport · Form P-11</h2>
+<div style="font:400 13.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-bottom:20px">Started 12 September 2026 · last edited 21 September 2026 at 09:42</div>
+<div style="display:flex;justify-content:space-between;font:500 11.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#656e7a;margin-bottom:8px"><span>3 of 8 sections complete</span><span style="color:#14181f">37%</span></div>
+<div style="height:6px;background:#e2ddd0;border-radius:3px;overflow:hidden;margin-bottom:22px"><div style="width:37.5%;height:100%;background:#1c2c4c"></div></div>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px">
+<button sc-camel-on-click="{{ goApply }}" style="padding:14px 28px;background:#1c2c4c;border:none;border-radius:3px;font:600 14.5px/1 'IBM Plex Sans',sans-serif;color:#fff;cursor:pointer" style-hover="background:#14213b">Resume application</button>
+<button style="padding:14px 22px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 14px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer" style-hover="border-color:#1c2c4c">Download a copy (PDF)</button>
+<button style="padding:14px 22px;background:none;border:none;font:500 14px/1 'IBM Plex Sans',sans-serif;color:#7b2230;cursor:pointer;text-decoration:underline">Withdraw</button>
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#e2ddd0;border:1px solid #e2ddd0;border-radius:3px;overflow:hidden">
+<div style="background:#f7f5ef;padding:15px 17px"><div style="font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:7px">Fee due</div><div style="font:500 17px/1 'IBM Plex Mono',monospace;color:#14181f">$ 130.00</div></div>
+<div style="background:#f7f5ef;padding:15px 17px"><div style="font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:7px">Appointment</div><div style="font:500 14px/1.1 'IBM Plex Sans',sans-serif;color:#7b2230">Not yet booked</div></div>
+<div style="background:#f7f5ef;padding:15px 17px"><div style="font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:7px">Draft expires</div><div style="font:500 14px/1.1 'IBM Plex Sans',sans-serif;color:#14181f">11 November 2026</div></div>
+</div>
+</div>
+</div>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:24px 26px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:14px">Messages from the Passport Office</div>
+<div style="display:flex;gap:14px;padding:14px 0;border-top:1px solid #f2eee2"><span style="width:96px;flex:none;font:400 12px/1.6 'IBM Plex Mono',monospace;color:#6b7280">19 Sept</span><div><div style="font:500 13.5px/1.4 'IBM Plex Sans',sans-serif;color:#14181f">Identity card accepted for verification</div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:2px">No action is needed from you.</div></div></div>
+<div style="display:flex;gap:14px;padding:14px 0;border-top:1px solid #f2eee2"><span style="width:96px;flex:none;font:400 12px/1.6 'IBM Plex Mono',monospace;color:#6b7280">14 Sept</span><div><div style="font:500 13.5px/1.4 'IBM Plex Sans',sans-serif;color:#14181f">Proof of residence still required</div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:2px">Upload a document dated within the last three months to continue.</div></div></div>
+</div>
+</div>
+<div style="width:352px;flex:none;display:flex;flex-direction:column;gap:18px">
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:22px 24px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:16px">Outstanding items</div>
+<div style="display:flex;gap:12px;align-items:flex-start;padding-bottom:15px;border-bottom:1px solid #f2eee2"><span style="width:20px;height:20px;flex:none;border-radius:50%;background:#f6ecee;color:#7b2230;display:flex;align-items:center;justify-content:center;font:500 11px/1 'IBM Plex Mono',monospace">1</span><div><div style="font:500 13.5px/1.4 'IBM Plex Sans',sans-serif;color:#14181f">Upload proof of residence</div><button sc-camel-on-click="{{ goSection5 }}" style="background:none;border:none;padding:0;font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#1c3a6e;text-decoration:underline;cursor:pointer">Go to section 05</button></div></div>
+<div style="display:flex;gap:12px;align-items:flex-start;padding:15px 0;border-bottom:1px solid #f2eee2"><span style="width:20px;height:20px;flex:none;border-radius:50%;background:#eae5d9;color:#5a6270;display:flex;align-items:center;justify-content:center;font:500 11px/1 'IBM Plex Mono',monospace">2</span><div><div style="font:500 13.5px/1.4 'IBM Plex Sans',sans-serif;color:#14181f">Complete travel, fee and declaration</div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773">Sections 06 to 08</div></div></div>
+<div style="display:flex;gap:12px;align-items:flex-start;padding-top:15px"><span style="width:20px;height:20px;flex:none;border-radius:50%;background:#eae5d9;color:#5a6270;display:flex;align-items:center;justify-content:center;font:500 11px/1 'IBM Plex Mono',monospace">3</span><div><div style="font:500 13.5px/1.4 'IBM Plex Sans',sans-serif;color:#14181f">Book a biometric appointment</div><button sc-camel-on-click="{{ goAppt }}" style="background:none;border:none;padding:0;font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#1c3a6e;text-decoration:underline;cursor:pointer">See available times</button></div></div>
+</div>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:22px 24px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:14px">Documents on file</div>
+<div style="display:flex;flex-direction:column;gap:11px;font:400 13px/1.4 'IBM Plex Sans',sans-serif;color:#2a3038">
+<div style="display:flex;justify-content:space-between;gap:10px"><span>Birth certificate</span><span style="color:#2f6b4f;font-size:12px">✓ Verified</span></div>
+<div style="display:flex;justify-content:space-between;gap:10px"><span>National identity card</span><span style="color:#8a5a1b;font-size:12px">Checking</span></div>
+<div style="display:flex;justify-content:space-between;gap:10px"><span>Photograph</span><span style="color:#2f6b4f;font-size:12px">✓ Accepted</span></div>
+<div style="display:flex;justify-content:space-between;gap:10px"><span>Proof of residence</span><span style="color:#7b2230;font-size:12px">Missing</span></div>
+</div>
+</div>
+<div style="background:#eef1f5;border:1px solid #d3dae4;border-radius:4px;padding:20px 22px">
+<div style="font:600 13px/1.3 'IBM Plex Sans',sans-serif;color:#1c2c4c;margin-bottom:7px">Current processing times</div>
+<div style="font:400 12.5px/1.6 'IBM Plex Sans',sans-serif;color:#33425c">Standard service is running to 3 weeks from appointment. Expedited service is available at all regional offices.</div>
+</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isAppt }}">
+<div style="max-width:1320px;margin:0 auto;padding:30px 32px 0">
+<div style="display:flex;align-items:center;gap:8px;font:400 12px/1 'IBM Plex Sans',sans-serif;color:#5f6773;margin-bottom:14px"><a href="#" sc-camel-on-click="{{ goDash }}" style="color:#5f6773">Dashboard</a><span>›</span><span style="color:#2a3038">Book an appointment</span></div>
+<h1 style="margin:0 0 6px;font:600 31px/1.15 'Source Serif 4',Georgia,serif;color:#14181f;letter-spacing:-.01em">Book your biometric appointment</h1>
+<p style="margin:0 0 26px;max-width:70ch;font:400 14.5px/1.6 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">Your application has been received and the fee has been authorised. Attend in person so that your fingerprints, signature and photograph can be captured, and bring the original of every document you uploaded.</p>
+<div style="display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap">
+<div style="flex:1;min-width:440px;display:flex;flex-direction:column;gap:22px">
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:24px 26px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:14px">1 · Choose an office</div>
+<div style="display:flex;flex-direction:column;gap:10px">
+<label style="display:flex;align-items:flex-start;gap:13px;padding:15px 17px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff" style-hover="border-color:#1c2c4c"><input type="radio" name="office" defaultchecked="" style="accent-color:#1c2c4c;width:16px;height:16px;margin:2px 0 0"><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:12px"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Halveston Central Passport Office</span><span style="font:400 12px/1.3 'IBM Plex Mono',monospace;color:#5f6773">2.4 km</span></div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">40 Bellamy Street, Halveston · earliest appointment 22 October</div></div></label>
+<label style="display:flex;align-items:flex-start;gap:13px;padding:15px 17px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff" style-hover="border-color:#1c2c4c"><input type="radio" name="office" style="accent-color:#1c2c4c;width:16px;height:16px;margin:2px 0 0"><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:12px"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Northgate Regional Office</span><span style="font:400 12px/1.3 'IBM Plex Mono',monospace;color:#5f6773">11.8 km</span></div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">Civic Square, Northgate · earliest 6 October · expedited service available</div></div></label>
+<label style="display:flex;align-items:flex-start;gap:13px;padding:15px 17px;border:1px solid #cfc9bb;border-radius:3px;cursor:pointer;background:#fff" style-hover="border-color:#1c2c4c"><input type="radio" name="office" style="accent-color:#1c2c4c;width:16px;height:16px;margin:2px 0 0"><div style="flex:1"><div style="display:flex;justify-content:space-between;gap:12px"><span style="font:600 14.5px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Eastern Shore Service Point</span><span style="font:400 12px/1.3 'IBM Plex Mono',monospace;color:#5f6773">34.1 km</span></div><div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:3px">Pier Road, Callowbay · earliest appointment 29 September</div></div></label>
+</div>
+</div>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:24px 26px">
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280">2 · Choose a date</div>
+<div style="display:flex;align-items:center;gap:14px"><button style="width:28px;height:28px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;color:#5a6270;cursor:pointer;font-size:12px">‹</button><span style="font:600 14px/1 'Source Serif 4',Georgia,serif;color:#14181f;min-width:120px;text-align:center">October 2026</span><button style="width:28px;height:28px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;color:#5a6270;cursor:pointer;font-size:12px">›</button></div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">
+<div style="text-align:center;font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;color:#6b7280;padding-bottom:6px">MON</div>
+<div style="text-align:center;font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;color:#6b7280;padding-bottom:6px">TUE</div>
+<div style="text-align:center;font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;color:#6b7280;padding-bottom:6px">WED</div>
+<div style="text-align:center;font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;color:#6b7280;padding-bottom:6px">THU</div>
+<div style="text-align:center;font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;color:#6b7280;padding-bottom:6px">FRI</div>
+<div style="text-align:center;font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;color:#6b7280;padding-bottom:6px">SAT</div>
+<div style="text-align:center;font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.09em;color:#6b7280;padding-bottom:6px">SUN</div>
+<sc-for list="{{ days }}" as="d" hint-placeholder-count="35">
+<button sc-camel-on-click="{{ d.click }}" style="height:44px;border-radius:3px;cursor:pointer;font:500 14px/1 'IBM Plex Mono',monospace;border:1px solid {{ d.bc }};background:{{ d.bg }};color:{{ d.fg }}">{{ d.label }}</button>
+</sc-for>
+</div>
+<div style="display:flex;gap:20px;margin-top:16px;font:400 11.5px/1 'IBM Plex Sans',sans-serif;color:#5f6773">
+<span style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border:1px solid #cfc9bb;background:#fff;border-radius:2px"></span>Available</span>
+<span style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;background:#1c2c4c;border-radius:2px"></span>Selected</span>
+<span style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;background:#f0ede5;border-radius:2px"></span>Fully booked</span>
+</div>
+</div>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:24px 26px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:14px">3 · Choose a time</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:9px">
+<sc-for list="{{ slots }}" as="t" hint-placeholder-count="8">
+<button sc-camel-on-click="{{ t.click }}" style="padding:12px 0;border-radius:3px;cursor:pointer;font:500 14px/1 'IBM Plex Mono',monospace;border:1px solid {{ t.bc }};background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
+</sc-for>
+</div>
+<div style="font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:14px">Appointments last about 20 minutes. Please arrive 10 minutes early for security screening.</div>
+</div>
+</div>
+<div style="width:352px;flex:none;position:sticky;top:22px;display:flex;flex-direction:column;gap:16px">
+<div style="background:#fffdf8;border:1px solid #cfc9bb;border-radius:4px;overflow:hidden">
+<div style="padding:13px 22px;background:#14181f;color:#fff;font:500 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.13em;text-transform:uppercase">Appointment summary</div>
+<div style="padding:22px">
+<div style="font:600 19px/1.3 'Source Serif 4',Georgia,serif;color:#14181f;margin-bottom:2px">Halveston Central</div>
+<div style="font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-bottom:18px">40 Bellamy Street, Halveston HV1 9QT</div>
+<div style="display:flex;align-items:baseline;gap:10px;padding:14px 0;border-top:1px solid #f2eee2;border-bottom:1px solid #f2eee2;margin-bottom:18px">
+<span style="font:500 30px/1 'IBM Plex Mono',monospace;color:#14181f">{{ pickedDay }}</span>
+<div><div style="font:600 14px/1.2 'IBM Plex Sans',sans-serif;color:#14181f">October 2026</div><div style="font:400 12.5px/1.2 'IBM Plex Sans',sans-serif;color:#5f6773">{{ pickedWeekday }} at {{ slot }}</div></div>
+</div>
+<div style="font:600 10.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:10px">Bring with you</div>
+<div style="display:flex;flex-direction:column;gap:7px;font:400 12.5px/1.5 'IBM Plex Sans',sans-serif;color:#2a3038;margin-bottom:20px">
+<div>· Original full birth certificate</div><div>· National identity card</div><div>· Proof of residence</div><div>· This confirmation, printed or on your phone</div>
+</div>
+<button sc-camel-on-click="{{ goDone }}" style="width:100%;padding:14px;background:#7b2230;border:none;border-radius:3px;font:600 14.5px/1 'IBM Plex Sans',sans-serif;color:#fff;cursor:pointer" style-hover="background:#661a26">Confirm this appointment</button>
+<div style="font:400 11.5px/1.5 'IBM Plex Sans',sans-serif;color:#5f6773;margin-top:11px;text-align:center">You may reschedule once, free of charge, up to 48 hours beforehand.</div>
+</div>
+</div>
+<div style="background:#f0ede5;border:1px solid #e2ddd0;border-radius:4px;height:170px;display:flex;align-items:center;justify-content:center;font:400 12px/1.5 'IBM Plex Sans',sans-serif;color:#6b7280;text-align:center;padding:16px">Map placeholder — office location and transport links</div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isDone }}">
+<div style="max-width:1020px;margin:0 auto;padding:40px 32px 0">
+<div style="background:#fffdf8;border:1px solid #cfc9bb;border-radius:4px;padding:38px 40px;margin-bottom:22px;position:relative;overflow:hidden">
+<div style="position:absolute;right:-30px;top:-30px;width:200px;height:200px;border-radius:50%;border:14px solid rgba(47,107,79,.07);pointer-events:none"></div>
+<div style="display:flex;align-items:center;gap:11px;margin-bottom:14px"><span style="width:26px;height:26px;border-radius:50%;background:#2f6b4f;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span><span style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.13em;text-transform:uppercase;color:#1f4a37">Application submitted</span></div>
+<h1 style="margin:0 0 12px;font:600 34px/1.2 'Source Serif 4',Georgia,serif;color:#14181f;letter-spacing:-.01em;max-width:26ch;text-wrap:pretty">Your application has been received</h1>
+<p style="margin:0 0 26px;max-width:62ch;font:400 14.5px/1.65 'IBM Plex Sans',sans-serif;color:#5a6270;text-wrap:pretty">A confirmation has been sent to p.matthews@mailbox.mr. Quote your reference number in any correspondence with the Passport Office.</p>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#e2ddd0;border:1px solid #e2ddd0;border-radius:3px;overflow:hidden">
+<div style="background:#f7f5ef;padding:17px 19px"><div style="font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:8px">Reference</div><div style="font:500 16px/1 'IBM Plex Mono',monospace;color:#14181f">MR-2026-4471-08</div></div>
+<div style="background:#f7f5ef;padding:17px 19px"><div style="font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:8px">Paid</div><div style="font:500 16px/1 'IBM Plex Mono',monospace;color:#14181f">$ {{ fee.total }}</div></div>
+<div style="background:#f7f5ef;padding:17px 19px"><div style="font:600 10px/1 'IBM Plex Sans',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:8px">Estimated issue</div><div style="font:500 16px/1 'IBM Plex Sans',sans-serif;color:#14181f">by 12 November 2026</div></div>
+</div>
+</div>
+<div style="background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:28px 30px;margin-bottom:22px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:22px">Progress of your application</div>
+<div style="display:flex;align-items:flex-start;gap:12px">
+<div style="flex:1;display:flex;flex-direction:column;gap:10px"><div style="height:4px;background:#2f6b4f;border-radius:2px"></div><div style="font:600 13px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Submitted</div><div style="font:400 11.5px/1.4 'IBM Plex Mono',monospace;color:#5f6773">21 Sept 2026</div></div>
+<div style="flex:1;display:flex;flex-direction:column;gap:10px"><div style="height:4px;background:#1c2c4c;border-radius:2px"></div><div style="font:600 13px/1.3 'IBM Plex Sans',sans-serif;color:#14181f">Documents checked</div><div style="font:400 11.5px/1.4 'IBM Plex Mono',monospace;color:#1c2c4c">In progress</div></div>
+<div style="flex:1;display:flex;flex-direction:column;gap:10px"><div style="height:4px;background:#e2ddd0;border-radius:2px"></div><div style="font:600 13px/1.3 'IBM Plex Sans',sans-serif;color:#6b7280">Biometrics captured</div><div style="font:400 11.5px/1.4 'IBM Plex Mono',monospace;color:#6b7280">{{ pickedDay }} Oct 2026</div></div>
+<div style="flex:1;display:flex;flex-direction:column;gap:10px"><div style="height:4px;background:#e2ddd0;border-radius:2px"></div><div style="font:600 13px/1.3 'IBM Plex Sans',sans-serif;color:#6b7280">Passport printed</div><div style="font:400 11.5px/1.4 'IBM Plex Mono',monospace;color:#6b7280">Awaiting</div></div>
+<div style="flex:1;display:flex;flex-direction:column;gap:10px"><div style="height:4px;background:#e2ddd0;border-radius:2px"></div><div style="font:600 13px/1.3 'IBM Plex Sans',sans-serif;color:#6b7280">Ready to collect</div><div style="font:400 11.5px/1.4 'IBM Plex Mono',monospace;color:#6b7280">Awaiting</div></div>
+</div>
+</div>
+<div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;margin-bottom:26px">
+<div style="flex:1;min-width:300px;background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:24px 26px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:14px">Your appointment</div>
+<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px"><span style="font:500 34px/1 'IBM Plex Mono',monospace;color:#14181f">{{ pickedDay }}</span><div><div style="font:600 15px/1.2 'Source Serif 4',Georgia,serif;color:#14181f">October 2026</div><div style="font:400 12.5px/1.3 'IBM Plex Sans',sans-serif;color:#5f6773">{{ pickedWeekday }} at {{ slot }}</div></div></div>
+<div style="font:400 13px/1.55 'IBM Plex Sans',sans-serif;color:#2a3038;margin-bottom:16px">Halveston Central Passport Office, 40 Bellamy Street, Halveston HV1 9QT</div>
+<div style="display:flex;gap:9px;flex-wrap:wrap"><button style="padding:10px 16px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer" style-hover="border-color:#1c2c4c">Add to calendar</button><button sc-camel-on-click="{{ goAppt }}" style="padding:10px 16px;background:#fff;border:1px solid #cfc9bb;border-radius:3px;font:500 12.5px/1 'IBM Plex Sans',sans-serif;color:#5a6270;cursor:pointer" style-hover="border-color:#1c2c4c">Reschedule</button></div>
+</div>
+<div style="flex:1;min-width:300px;background:#fffdf8;border:1px solid #e2ddd0;border-radius:4px;padding:24px 26px">
+<div style="font:600 11px/1 'IBM Plex Sans',sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:14px">What happens next</div>
+<div style="display:flex;flex-direction:column;gap:13px;font:400 13px/1.55 'IBM Plex Sans',sans-serif;color:#2a3038">
+<div>An examiner checks your documents against civil registration records. You will be notified if anything further is needed.</div>
+<div>Attend your appointment with all original documents. Your fingerprints and signature are captured there.</div>
+<div>Your passport is printed at the National Print Centre and held for collection for 30 days.</div>
+</div>
+</div>
+</div>
+<div style="display:flex;gap:12px;flex-wrap:wrap;padding-bottom:10px">
+<button style="padding:13px 24px;background:#1c2c4c;border:none;border-radius:3px;font:600 14px/1 'IBM Plex Sans',sans-serif;color:#fff;cursor:pointer" style-hover="background:#14213b">Download receipt (PDF)</button>
+<button sc-camel-on-click="{{ goDash }}" style="padding:13px 22px;background:#fffdf8;border:1px solid #cfc9bb;border-radius:3px;font:500 14px/1 'IBM Plex Sans',sans-serif;color:#1c2c4c;cursor:pointer" style-hover="border-color:#1c2c4c">Return to your account</button>
+</div>
+</div>
+</sc-if>
+
+<footer style="max-width:1320px;margin:56px auto 0;padding:26px 32px 10px;border-top:1px solid #dcd7ca;display:flex;gap:28px;flex-wrap:wrap;align-items:baseline">
+<div style="font:400 11.5px/1.6 'IBM Plex Sans',sans-serif;color:#6b7280;flex:1;min-width:260px">© Department of Home Affairs, Republic of Marenta. Information about this service is available in Marentan, Aldeni and sign language on request.</div>
+<div style="display:flex;gap:22px;font:400 12px/1 'IBM Plex Sans',sans-serif;flex-wrap:wrap"><a href="#">Accessibility</a><a href="#">Privacy notice</a><a href="#">Fees and processing times</a><a href="#">Complaints</a></div>
+</footer>
+
+<sc-if value="{{ showSwitcher }}" hint-placeholder-val="{{ true }}">
+<div style="position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:6px 8px 6px 14px;background:rgba(20,24,31,.94);border-radius:26px;box-shadow:0 6px 24px rgba(0,0,0,.24);z-index:50">
+<span style="font:500 9.5px/1 'IBM Plex Sans',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-right:6px">Screens</span>
+<button sc-camel-on-click="{{ goDash }}" style="padding:8px 13px;background:none;border:none;border-radius:20px;font:500 12px/1 'IBM Plex Sans',sans-serif;color:rgba(255,255,255,.82);cursor:pointer" style-hover="background:rgba(255,255,255,.14)">Account</button>
+<button sc-camel-on-click="{{ goApply }}" style="padding:8px 13px;background:none;border:none;border-radius:20px;font:500 12px/1 'IBM Plex Sans',sans-serif;color:rgba(255,255,255,.82);cursor:pointer" style-hover="background:rgba(255,255,255,.14)">Application form</button>
+<button sc-camel-on-click="{{ goAppt }}" style="padding:8px 13px;background:none;border:none;border-radius:20px;font:500 12px/1 'IBM Plex Sans',sans-serif;color:rgba(255,255,255,.82);cursor:pointer" style-hover="background:rgba(255,255,255,.14)">Appointment</button>
+<button sc-camel-on-click="{{ goDone }}" style="padding:8px 13px;background:none;border:none;border-radius:20px;font:500 12px/1 'IBM Plex Sans',sans-serif;color:rgba(255,255,255,.82);cursor:pointer" style-hover="background:rgba(255,255,255,.14)">Confirmation</button>
+</div>
+</sc-if>
+</div>
+</template>
+
+<script>
+/* ===========================================================================
+   mini-dc — the slice of the design-tool runtime this page actually needs.
+
+   The handoff's markup is a template language: {{ path }} holes in text and
+   attributes, <sc-if> / <sc-for> for control flow, style-hover / style-focus
+   for pseudo-states, sc-camel-* for attributes HTML would have lowercased
+   (sc-camel-on-click -> onClick, sc-camel-default-value -> defaultValue).
+   The original shipped React to interpret it. This does the same job in one
+   pass: compile() builds the DOM once and collects one updater per hole, and
+   render() re-runs just those updaters. Nothing is unmounted, so the four
+   screens and everything typed into the form survive every state change.
+   =========================================================================== */
+(function () {
+'use strict';
+
+/* Tags the editor rewrites to keep them out of the HTML parser's table and
+   select rules, and the editor-only attributes to drop on the way in. */
+var RAW = {
+  'sc-raw-select':'select','sc-raw-table':'table','sc-raw-thead':'thead','sc-raw-tbody':'tbody',
+  'sc-raw-tfoot':'tfoot','sc-raw-tr':'tr','sc-raw-td':'td','sc-raw-th':'th','sc-raw-caption':'caption'
+};
+var DROP = {'hint-placeholder-val':1,'hint-placeholder-count':1,'hint-size':1,'data-dc-tpl':1,'sc-name':1,'x-length':1};
+
+/* style-hover="border-color:#1c2c4c" becomes a generated class, since the
+   prototype styles everything inline and inline styles have no :hover. Every
+   declaration is marked !important, because the element it lands on always
+   carries an inline style that would otherwise outrank the class. */
+var sheet = document.createElement('style');
+document.head.appendChild(sheet);
+var pseudoSeen = {}, pseudoN = 0;
+function importantify(css) {
+  return css.split(';').map(function (d) {
+    d = d.trim();
+    if (!d || d.indexOf('!important') !== -1) return d;
+    return d + ' !important';
+  }).filter(Boolean).join(';');
+}
+function pseudoClass(pseudo, decl) {
+  var key = pseudo + '{' + decl;
+  if (!pseudoSeen[key]) {
+    pseudoSeen[key] = 'ps' + (++pseudoN);
+    var element = pseudo === 'before' || pseudo === 'after';
+    var rule = '.' + pseudoSeen[key] + (element ? '::' : ':') + pseudo +
+               '{' + (element ? decl : importantify(decl)) + '}';
+    try {
+      sheet.sheet.insertRule(rule, sheet.sheet.cssRules.length);
+    } catch (e) { /* a declaration the browser rejects is not worth a broken page */ }
+  }
+  return pseudoSeen[key];
+}
+
+function resolve(vals, path) {
+  var p = path.trim();
+  if (p === 'true') return true;
+  if (p === 'false') return false;
+  var parts = p.split('.'), cur = vals;
+  for (var i = 0; i < parts.length; i++) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
+}
+
+/* "{{ n1.click }}" yields the value itself (a function, a number); anything
+   with surrounding text yields the interpolated string. */
+function compileAttr(raw) {
+  var whole = /^\s*\{\{([\s\S]+?)\}\}\s*$/.exec(raw);
+  if (whole) return function (v) { return resolve(v, whole[1]); };
+  if (raw.indexOf('{{') === -1) return function () { return raw; };
+  var parts = raw.split(/\{\{([\s\S]+?)\}\}/g);
+  return function (v) {
+    var out = '';
+    for (var i = 0; i < parts.length; i++) {
+      if (!(i & 1)) { out += parts[i]; continue; }
+      var r = resolve(v, parts[i]);
+      out += (r === null || r === undefined) ? '' : r;
+    }
+    return out;
+  };
+}
+
+var VALS = {};   /* what the template renders against, rebuilt by render() */
+
+function compile(node, ups, scope) {
+  if (node.nodeType === 3) return compileText(node, ups);
+  if (node.nodeType !== 1) return null;
+  var tag = node.localName;
+  if (tag === 'sc-if') return compileIf(node, ups, scope);
+  if (tag === 'sc-for') return compileFor(node, ups, scope);
+  if (tag === 'image-slot') return photoSlot(node);
+
+  var el = document.createElement(RAW[tag] || tag);
+  var classes = [];
+  var attrs = node.attributes;
+  for (var i = 0; i < attrs.length; i++) {
+    var name = attrs[i].name, value = attrs[i].value;
+    if (DROP[name]) continue;
+    if (name.indexOf('style-') === 0) { classes.push(pseudoClass(name.slice(6), value)); continue; }
+    if (name.indexOf('sc-camel-') === 0) name = name.slice(9);
+    if (name.indexOf('on-') === 0) { bind(el, name.slice(3), compileAttr(value), scope); continue; }
+    /* defaultValue / defaultChecked: the attribute form, so the field keeps a
+       starting value a reset returns to rather than a one-off property write. */
+    if (name === 'default-value') { el.setAttribute('value', value); continue; }
+    if (name === 'defaultchecked' || name === 'default-checked') { el.setAttribute('checked', ''); continue; }
+    if (name === 'max-length') { el.setAttribute('maxlength', value); continue; }
+    if (value.indexOf('{{') !== -1) { hole(el, name, compileAttr(value), ups); continue; }
+    el.setAttribute(name, value);
+  }
+  if (classes.length) el.className = (el.className ? el.className + ' ' : '') + classes.join(' ');
+  appendKids(node, el, ups, scope);
+  return el;
+}
+
+/* Handlers are looked up when the event fires, against the scope the node was
+   built in: the page's values, or one list item's, inside an sc-for. */
+function bind(el, event, get, scope) {
+  el.addEventListener(event, function (e) {
+    var fn = get(scope ? scope.vals : VALS);
+    if (typeof fn === 'function') fn(e);
+  });
+}
+
+function hole(el, name, get, ups) {
+  ups.push(function (v) {
+    var out = get(v);
+    el.setAttribute(name, (out === null || out === undefined) ? '' : out);
+  });
+}
+
+function compileText(node, ups) {
+  var txt = node.nodeValue || '';
+  if (txt.indexOf('{{') === -1) return document.createTextNode(txt);
+  var frag = document.createDocumentFragment();
+  var parts = txt.split(/\{\{([\s\S]+?)\}\}/g);
+  for (var i = 0; i < parts.length; i++) {
+    if (!(i & 1)) { if (parts[i]) frag.appendChild(document.createTextNode(parts[i])); continue; }
+    frag.appendChild(textHole(parts[i], ups));
+  }
+  return frag;
+}
+
+function textHole(path, ups) {
+  var span = document.createElement('span');
+  ups.push(function (v) {
+    var x = resolve(v, path);
+    span.textContent = (x === null || x === undefined || typeof x === 'boolean') ? '' : String(x);
+  });
+  return span;
+}
+
+function appendKids(node, parent, ups, scope) {
+  var kids = node.childNodes;
+  for (var i = 0; i < kids.length; i++) {
+    var built = compile(kids[i], ups, scope);
+    if (built) parent.appendChild(built);
+  }
+}
+
+/* A branch is built once and shown or hidden. display:contents keeps it out of
+   its parent's layout, so the flex and grid rules around it are unchanged. */
+function compileIf(node, ups, scope) {
+  var get = compileAttr(node.getAttribute('value') || '');
+  var box = document.createElement('div');
+  appendKids(node, box, ups, scope);
+  ups.push(function (v) { box.style.display = get(v) ? 'contents' : 'none'; });
+  return box;
+}
+
+/* Both lists in this prototype (calendar days, appointment slots) are cheap and
+   hold no typed state, so they are rebuilt whenever their source changes. */
+function compileFor(node, ups, scope) {
+  var get = compileAttr(node.getAttribute('list') || '');
+  var as = node.getAttribute('as') || 'item';
+  var source = [];
+  for (var i = 0; i < node.childNodes.length; i++) source.push(node.childNodes[i].cloneNode(true));
+  var box = document.createElement('div');
+  box.style.display = 'contents';
+  ups.push(function (v) {
+    var list = get(v);
+    if (!Array.isArray(list)) list = [];
+    box.textContent = '';
+    list.forEach(function (item, idx) {
+      var vals = Object.create(v);
+      vals[as] = item;
+      vals.$index = idx;
+      var itemScope = {vals: vals};      /* what this item's handlers resolve against */
+      var local = [];
+      source.forEach(function (child) {
+        var built = compile(child.cloneNode(true), local, itemScope);
+        if (built) box.appendChild(built);
+      });
+      local.forEach(function (u) { u(vals); });
+    });
+  });
+  return box;
+}
+
+/* The handoff's <image-slot> is a design-tool component backed by a sidecar
+   file. Outside that runtime it is just a fillable frame: click or drop. */
+var slots = {};
+function photoSlot(node) {
+  var ICON = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>' +
+    '<path d="m21 15-5-5L5 21"/></svg>';
+
+  var el = document.createElement('div');
+  el.className = 'photo-slot';
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
+  var label = node.getAttribute('placeholder') || 'Drop an image';
+  el.setAttribute('aria-label', label);
+
+  var empty = document.createElement('div');
+  empty.className = 'empty';
+  empty.innerHTML = ICON + '<div class="cap"></div><div class="sub">or <u>browse files</u></div>';
+  empty.querySelector('.cap').textContent = label;
+  el.appendChild(empty);
+
+  var ring = document.createElement('div');
+  ring.className = 'ring';
+  el.appendChild(ring);
+
+  var file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  file.style.display = 'none';
+  el.appendChild(file);
+
+  var url = null;
+  function show(f) {
+    if (!f || f.type.indexOf('image/') !== 0) return;
+    if (url) URL.revokeObjectURL(url);
+    url = URL.createObjectURL(f);
+    var img = el.querySelector('img') || el.insertBefore(document.createElement('img'), empty);
+    img.src = url;
+    img.alt = 'The photograph you chose';
+    el.classList.add('is-filled');
+  }
+  function clear() {
+    if (url) { URL.revokeObjectURL(url); url = null; }
+    var img = el.querySelector('img');
+    if (img) img.remove();
+    el.classList.remove('is-filled');
+    file.value = '';
+  }
+
+  el.addEventListener('click', function (e) { if (e.target !== file) file.click(); });
+  el.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); }
+  });
+  file.addEventListener('change', function () { show(file.files && file.files[0]); });
+  el.addEventListener('dragover', function (e) { e.preventDefault(); el.classList.add('is-over'); });
+  el.addEventListener('dragleave', function () { el.classList.remove('is-over'); });
+  el.addEventListener('drop', function (e) {
+    e.preventDefault();
+    el.classList.remove('is-over');
+    show(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+
+  var id = node.getAttribute('id');
+  if (id) { el.id = id; slots[id] = { open: function () { file.click(); }, clear: clear }; }
+  return el;
+}
+
+/* ===========================================================================
+   The application itself — the handoff's component logic, minus React.
+   =========================================================================== */
+
+/* Screens are addressable, so a link can point at one and Back works. */
+var SCREEN_OF_HASH = {apply:'apply', account:'dashboard', appointment:'appointment', confirmation:'confirmation'};
+var HASH_OF_SCREEN = {apply:'apply', dashboard:'account', appointment:'appointment', confirmation:'confirmation'};
+function screenFromHash() {
+  return SCREEN_OF_HASH[(location.hash || '').replace(/^#/, '')] || null;
+}
+
+var SECTIONS = ['s1','s2','s3','s4','s5','s6','s7','s8'];
+
+var state = {
+  screen: screenFromHash() || 'apply',
+  urgency: 'standard',
+  delivery: 'collect',
+  pay: 'card',
+  office: 'central',
+  day: 22,
+  slot: '10:20',
+  declared: false,
+  active: 's1'
+};
+
+var ups = [];
+function setState(patch) {
+  for (var k in patch) state[k] = patch[k];
+  render();
+}
+
+function go(screen) {
+  var hash = '#' + HASH_OF_SCREEN[screen];
+  if (location.hash !== hash) location.hash = hash;   /* hashchange finishes the move */
+  else if (state.screen !== screen) setState({screen: screen});
+  window.scrollTo({top: 0});
+}
+
+window.addEventListener('hashchange', function () {
+  var next = screenFromHash();
+  if (next && next !== state.screen) { setState({screen: next}); window.scrollTo({top: 0}); }
+});
+
+function jump(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  window.scrollBy({top: el.getBoundingClientRect().top - 86, behavior: 'smooth'});
+  setState({active: id});
+}
+
+/* Which section the reader is in, for the sidebar's current marker. */
+function spy() {
+  if (state.screen !== 'apply') return;
+  var active = SECTIONS[0], found = false;
+  SECTIONS.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el && el.getBoundingClientRect().top - 150 <= 0) { active = id; found = true; }
+  });
+  if (!found) active = SECTIONS[0];
+  if (active !== state.active) setState({active: active});
+}
+
+function money(n) { return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+/* October 2026: the 1st falls on a Thursday, and the office has nothing free
+   before the 22nd or at a weekend. */
+function calendar() {
+  var names = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  var out = [];
+  for (var i = 0; i < 3; i++) out.push({label:'', bg:'transparent', bc:'transparent', fg:'transparent', click:function(){}});
+  for (var n = 1; n <= 31; n++) {
+    var col = (3 + n - 1) % 7;
+    var open = n >= 22 && col < 5;
+    var sel = open && n === state.day;
+    out.push({
+      label: String(n),
+      weekday: names[col],
+      bg: sel ? '#1c2c4c' : open ? '#ffffff' : '#f0ede5',
+      bc: sel ? '#1c2c4c' : open ? '#cfc9bb' : '#f0ede5',
+      fg: sel ? '#ffffff' : open ? '#14181f' : '#86816f',
+      click: open ? (function (d) { return function () { setState({day: d}); }; })(n) : function () {}
+    });
+  }
+  return out;
+}
+
+function renderVals() {
+  var base = 130,
+      exp = state.urgency === 'express' ? 60 : 0,
+      del = state.delivery === 'courier' ? 19.5 : 0;
+  var days = calendar();
+  var picked = days.filter(function (d) { return d.label === String(state.day); })[0] || {};
+  var times = ['09:00','09:40','10:20','11:00','11:40','14:00','14:40','15:20'];
+  var taken = ['09:00','11:00'];
+
+  var vals = {};
+  SECTIONS.forEach(function (id, i) {
+    var on = state.active === id;
+    vals['n' + (i + 1)] = {
+      bg: on ? '#ebe7dc' : 'transparent',
+      bc: on ? '#7b2230' : 'transparent',
+      fg: on ? '#14181f' : '#2a3038',
+      fw: on ? '600' : '500',
+      click: function () { jump(id); }
+    };
+  });
+
+  vals.photoGuides = true;
+  vals.showSwitcher = true;
+  vals.days = days;
+  vals.pickedDay = state.day;
+  vals.pickedWeekday = picked.weekday || '';
+  vals.slot = state.slot;
+  vals.slots = times.map(function (t) {
+    var open = taken.indexOf(t) === -1;
+    var sel = open && t === state.slot;
+    return {
+      label: t,
+      bg: sel ? '#1c2c4c' : open ? '#ffffff' : '#f0ede5',
+      bc: sel ? '#1c2c4c' : open ? '#cfc9bb' : '#f0ede5',
+      fg: sel ? '#ffffff' : open ? '#14181f' : '#86816f',
+      click: open ? function () { setState({slot: t}); } : function () {}
+    };
+  });
+
+  vals.isApply = state.screen === 'apply';
+  vals.isDash = state.screen === 'dashboard';
+  vals.isAppt = state.screen === 'appointment';
+  vals.isDone = state.screen === 'confirmation';
+
+  vals.goDash = function (e) { if (e && e.preventDefault) e.preventDefault(); go('dashboard'); };
+  vals.goApply = function () { go('apply'); };
+  vals.goAppt = function () { go('appointment'); };
+  vals.goDone = function () { go('confirmation'); };
+  vals.goSection5 = function () { go('apply'); setTimeout(function () { jump('s5'); }, 60); };
+
+  vals.toggleDeclared = function (e) { setState({declared: !!e.target.checked}); };
+  vals.setStandard = function () { setState({urgency: 'standard'}); };
+  vals.setExpress  = function () { setState({urgency: 'express'}); };
+  vals.setCollect  = function () { setState({delivery: 'collect'}); };
+  vals.setCourier  = function () { setState({delivery: 'courier'}); };
+
+  vals.photoReplace = function () { if (slots['pp-photo']) slots['pp-photo'].open(); };
+  vals.photoRemove  = function () { if (slots['pp-photo']) slots['pp-photo'].clear(); };
+
+  vals.fee = {
+    base: money(base),
+    exp: exp ? money(exp) : '—',
+    del: del ? money(del) : 'Free',
+    total: money(base + exp + del)
+  };
+  vals.speedLabel = state.urgency === 'express' ? 'Expedited — 8 working days' : 'Standard — 3 weeks';
+  vals.deliveryLabel = state.delivery === 'courier' ? 'Tracked courier to home address' : 'Collect at passport office';
+  return vals;
+}
+
+function render() {
+  VALS = renderVals();
+  for (var i = 0; i < ups.length; i++) ups[i](VALS);
+}
+
+var app = document.getElementById('app');
+var tpl = document.getElementById('tpl').content;
+for (var i = 0; i < tpl.childNodes.length; i++) {
+  var built = compile(tpl.childNodes[i], ups, null);
+  if (built) app.appendChild(built);
+}
+render();
+
+window.addEventListener('scroll', spy, {passive: true});
+setTimeout(spy, 80);
+})();
+</script>
+</body>
+</html>
