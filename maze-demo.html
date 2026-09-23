@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spoke Shop · Home</title>
+
+<!-- ============================================================
+     MAZE SNIPPET GOES HERE
+     Paste the tracking snippet Maze gives you directly below this
+     comment. Because this is a single-file app, this ONE placement
+     covers every screen.
+     ============================================================ -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #E9EEF1; --surface: #FFFFFF; --ink: #1C2A33; --muted: #5B6B75;
+    --line: #CBD5DB; --signal: #F2C200; --signal-ink: #1C2A33; --focus: #1F6FEB;
+    --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    --body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body);
+         padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+  .app { max-width: 480px; margin: 0 auto; min-height: 100vh; padding: 20px 20px 40px; }
+  header.bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .logo { font: 700 20px/1 var(--display); letter-spacing: -0.02em; }
+  .logo span { display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+               border: 3px solid var(--ink); margin-right: 6px; vertical-align: -1px; }
+  .back { background: none; border: 0; font: 500 15px var(--body); color: var(--muted); padding: 8px 0; cursor: pointer; }
+  h1 { font: 700 34px/1.05 var(--display); letter-spacing: -0.03em; margin: 0 0 12px; }
+  h2 { font: 700 20px/1.2 var(--display); margin: 28px 0 12px; }
+  p.lead { color: var(--muted); margin: 0 0 24px; }
+  .step { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  .list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .row { display: flex; justify-content: space-between; align-items: center; width: 100%;
+         background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+         padding: 16px; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .row strong { display: block; font-weight: 600; }
+  .row small { color: var(--muted); }
+  .row .price { font: 700 18px var(--display); }
+  .row[aria-pressed="true"] { border: 2px solid var(--ink); padding: 15px; }
+
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .slot { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+          padding: 12px 4px; font: 500 15px var(--body); color: var(--ink); cursor: pointer; }
+  .slot[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  label { display: block; font-weight: 500; margin: 16px 0 6px; }
+  input { width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 10px;
+          font: inherit; background: var(--surface); color: var(--ink); }
+  .error { color: #B42318; font-size: 14px; margin-top: 8px; min-height: 20px; }
+
+  .cta { display: block; width: 100%; margin-top: 28px; padding: 16px; border: 0; border-radius: 14px;
+         background: var(--signal); color: var(--signal-ink); font: 700 17px var(--display); cursor: pointer; }
+  .cta:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+
+  .summary { background: var(--surface); border-radius: 14px; padding: 4px 16px; border: 1px solid var(--line); }
+  .summary div { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .summary div:last-child { border-bottom: 0; }
+  .summary dt { color: var(--muted); } .summary dd { margin: 0; font-weight: 600; }
+
+  .hero-wheel { width: 120px; height: 120px; border-radius: 50%; border: 10px solid var(--ink);
+                position: relative; margin: 8px 0 28px; }
+  .hero-wheel::after { content: ""; position: absolute; inset: 38%; border-radius: 50%; background: var(--signal); }
+  .done-mark { width: 72px; height: 72px; border-radius: 50%; background: var(--signal);
+               display: grid; place-items: center; font: 700 36px var(--display); margin-bottom: 20px; }
+
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) { .screen.active { animation: in .18s ease-out; } }
+  @keyframes in { from { opacity: 0; } to { opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="logo"><span></span>Spoke Shop</div>
+    <button class="back" id="backBtn" hidden>Back</button>
+  </header>
+
+  <!-- Each screen: unique id, used as its URL. Keep ids short and stable. -->
+  <main>
+    <section class="screen" id="home" data-title="Home">
+      <div class="hero-wheel" aria-hidden="true"></div>
+      <h1>Bike repairs, booked in a minute</h1>
+      <p class="lead">Drop your bike off in the morning, pick it up the same day.</p>
+      <button class="cta" id="startBooking" data-go="services">Book a repair</button>
+    </section>
+
+    <section class="screen" id="services" data-title="Choose a repair">
+      <div class="step">Step 1 of 3</div>
+      <h1>What needs fixing?</h1>
+      <ul class="list" id="serviceList"></ul>
+    </section>
+
+    <section class="screen" id="time" data-title="Choose a time">
+      <div class="step">Step 2 of 3</div>
+      <h1>Pick a drop-off time</h1>
+      <p class="lead" id="timeFor"></p>
+      <h2>Friday</h2><div class="slots" data-day="Friday"></div>
+      <h2>Saturday</h2><div class="slots" data-day="Saturday"></div>
+      <button class="cta" id="toDetails" data-go="details" disabled>Continue</button>
+    </section>
+
+    <section class="screen" id="details" data-title="Your details">
+      <div class="step">Step 3 of 3</div>
+      <h1>Where should we text you?</h1>
+      <label for="name">Name</label><input id="name" autocomplete="name">
+      <label for="phone">Phone</label><input id="phone" type="tel" autocomplete="tel">
+      <div class="error" id="detailsError" role="alert"></div>
+      <button class="cta" id="toReview">Review booking</button>
+    </section>
+
+    <section class="screen" id="review" data-title="Review booking">
+      <h1>Check your booking</h1>
+      <dl class="summary" id="summary"></dl>
+      <button class="cta" id="confirmBooking" data-go="confirmed">Confirm booking</button>
+    </section>
+
+    <section class="screen" id="confirmed" data-title="Booking confirmed">
+      <div class="done-mark" aria-hidden="true">✓</div>
+      <h1>You're booked</h1>
+      <p class="lead" id="confirmText"></p>
+      <button class="cta" id="bookAnother" data-go="home">Back to home</button>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ================================================================
+   ROUTING — the part that matters for Maze.
+   "hash":  app.html#/services       (works on any static host)
+   "query": app.html?screen=services (real URL change via pushState,
+            also works on static hosts and survives reloads)
+   Try both in Maze and keep whichever it tracks more cleanly.
+   ================================================================ */
+const ROUTING_MODE = "hash";
+const SCREENS = ["home", "services", "time", "details", "review", "confirmed"];
+
+function currentScreen() {
+  const id = ROUTING_MODE === "hash"
+    ? location.hash.replace(/^#\/?/, "")
+    : new URLSearchParams(location.search).get("screen");
+  return SCREENS.includes(id) ? id : "home";
+}
+
+function go(id) {
+  if (ROUTING_MODE === "hash") {
+    location.hash = "/" + id;             // triggers hashchange -> render
+  } else {
+    const url = new URL(location.href);
+    url.searchParams.set("screen", id);
+    history.pushState({ screen: id }, "", url);
+    render();
+  }
+}
+
+function render() {
+  const id = currentScreen();
+  document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === id));
+  const el = document.getElementById(id);
+  document.title = "Spoke Shop · " + el.dataset.title;   // distinct page titles per screen
+  document.getElementById("backBtn").hidden = id === "home" || id === "confirmed";
+  window.scrollTo(0, 0);
+  if (id === "time") paintTime();
+  if (id === "review") paintReview();
+  if (id === "confirmed") paintConfirmed();
+  el.querySelector("h1").setAttribute("tabindex", "-1");
+  el.querySelector("h1").focus({ preventScroll: true });
+}
+
+window.addEventListener(ROUTING_MODE === "hash" ? "hashchange" : "popstate", render);
+
+/* ---------------- App state (in memory, with sensible defaults) ---------------- */
+const SERVICES = [
+  { id: "flat", name: "Flat tire fix", note: "Tube replaced, tire checked", price: 18 },
+  { id: "tune", name: "Basic tune-up", note: "Brakes, gears, chain clean", price: 55 },
+  { id: "brakes", name: "Brake service", note: "Pads and cable adjustment", price: 35 },
+  { id: "full", name: "Full overhaul", note: "Everything, stripped and rebuilt", price: 140 }
+];
+const TIMES = ["8:00", "9:00", "10:00"];
+const state = { service: SERVICES[0], day: null, time: null, name: "", phone: "" };
+
+const list = document.getElementById("serviceList");
+SERVICES.forEach(s => {
+  const li = document.createElement("li");
+  li.innerHTML = `<button class="row" id="service-${s.id}">
+      <span><strong>${s.name}</strong><small>${s.note}</small></span>
+      <span class="price">$${s.price}</span></button>`;
+  li.firstElementChild.addEventListener("click", () => { state.service = s; state.day = state.time = null; go("time"); });
+  list.appendChild(li);
+});
+
+document.querySelectorAll(".slots").forEach(box => {
+  TIMES.forEach(t => {
+    const b = document.createElement("button");
+    b.className = "slot"; b.textContent = t;
+    b.id = `slot-${box.dataset.day.toLowerCase()}-${t.replace(":", "")}`;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => { state.day = box.dataset.day; state.time = t; paintTime(); });
+    box.appendChild(b);
+  });
+});
+
+function paintTime() {
+  document.getElementById("timeFor").textContent = `For: ${state.service.name}`;
+  document.querySelectorAll(".slot").forEach(b => {
+    const on = b.parentElement.dataset.day === state.day && b.textContent === state.time;
+    b.setAttribute("aria-pressed", String(on));
+  });
+  document.getElementById("toDetails").disabled = !state.time;
+}
+
+document.getElementById("toReview").addEventListener("click", () => {
+  state.name = document.getElementById("name").value.trim();
+  state.phone = document.getElementById("phone").value.trim();
+  const err = document.getElementById("detailsError");
+  if (!state.name || state.phone.replace(/\D/g, "").length < 7) {
+    err.textContent = "Add your name and a phone number so we can text you when it's ready.";
+    return;
+  }
+  err.textContent = "";
+  go("review");
+});
+
+function paintReview() {
+  const rows = [
+    ["Repair", state.service.name],
+    ["Drop-off", state.time ? `${state.day} ${state.time}` : "Friday 8:00"],
+    ["Name", state.name || "—"],
+    ["Price", `$${state.service.price}`]
+  ];
+  document.getElementById("summary").innerHTML =
+    rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+}
+
+function paintConfirmed() {
+  const when = state.time ? `${state.day} at ${state.time}` : "your chosen time";
+  document.getElementById("confirmText").textContent =
+    `Bring your bike in ${when}. We'll text you when it's ready.`;
+}
+
+/* Generic navigation buttons */
+document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => go(b.dataset.go)));
+document.getElementById("backBtn").addEventListener("click", () => history.back());
+
+render();
+</script>
+</body>
+</html>
