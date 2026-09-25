@@ -315,9 +315,15 @@
      Labelling "Start" and "Match" here once, instead of spelling out
      "must match" / "any answer" on every single row, is what a plain
      checkbox column needs to be self-explanatory. */
+  /* The captured value is almost always short ('book:9', 'open:9') and a
+     flexible fraction column gave it far more room than it ever uses,
+     leaving the card mostly blank. Sized to its content instead, capped
+     so a longer one (a typed search query) still wraps rather than
+     stretching the row — and the space that frees up goes to Screen,
+     which actually benefits from it: a bigger thumbnail reads better. */
   .path-head, .path-step {
     display: grid;
-    grid-template-columns: 30px 30px minmax(110px, 1.15fr) minmax(70px, 0.85fr);
+    grid-template-columns: 30px 30px minmax(160px, 1fr) fit-content(180px);
     align-items: center;
     gap: 10px;
   }
@@ -347,7 +353,7 @@
      recognisable at a glance — reuses the same previewStep mechanism the
      heatmap panels already use elsewhere in this dashboard. */
   .path-thumb {
-    position: relative; width: 68px; height: 46px; flex: 0 0 auto;
+    position: relative; width: 96px; height: 64px; flex: 0 0 auto;
     border: 1px solid #E0DBCE; border-radius: 6px; overflow: hidden;
     background: #F0EEE6;
   }
