@@ -568,9 +568,16 @@
     },
 
     // A fresh attempt starts at welcome, logged out — where a participant
-    // handed "book a walk with a verified walker" should begin.
-    resetApp: () => {
-      screen = 'welcome'; view = 'list'; query = '';
+    // handed "book a walk with a verified walker" should begin — unless
+    // the task named a later entry step (e.g. 'chat'), so a task about
+    // messaging a walker isn't forced through onboarding and booking it
+    // never asked about. Every OTHER piece of state still resets to its
+    // default regardless of the entry step, so a screen that depends on
+    // prior state (book, checkout, live, recap, rate) renders against a
+    // generic walker/date/time rather than nothing at all.
+    resetApp: (entryStep) => {
+      screen = SCREENS.includes(entryStep) ? entryStep : 'welcome';
+      view = 'list'; query = '';
       filters = { instant: false, under80: false, verified: false, large: false };
       sortKey = 'best'; walkerId = 1;
       dogName = ''; dogBreed = ''; dogSize = 'Large'; dogTraits = []; dogNotes = '';
@@ -579,6 +586,7 @@
       tip = 20; rating = 0; tags = []; reviewText = '';
       chatWalkerId = 1; extraMsgs = []; progress = 22;
       stopLiveTimer();
+      if (screen === 'live') startLiveTimer();
       stepEnteredAt = Date.now();
       render();
     },

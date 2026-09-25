@@ -331,6 +331,12 @@
   .path-step-role { font-size: 12px; color: #8A8578; }
   .path-step.free { opacity: 0.62; }
   .path-step.free .path-step-role { font-style: italic; }
+  /* Before the chosen start: the participant never sees this screen, so
+     it cannot be bound either — dimmed further than a merely-free step
+     and its binding checkbox is disabled rather than just unticked. */
+  .path-step.skipped { opacity: 0.4; }
+  .path-step.skipped .path-step-role { font-style: italic; }
+  .path-step input[type="radio"] { margin-right: -2px; }
 
   .author-field { margin-bottom: 12px; }
   .author-field label {
@@ -1547,7 +1553,7 @@
 
           <div>
             <h3>What counts as success</h3>
-            <p class="author-hint">Tick the steps that must match. Untick one to leave it free — any answer there is fine.</p>
+            <p class="author-hint">Tick the steps that must match — untick one to leave it free, any answer there is fine. The dot picks where the task begins; steps before it are skipped and can't be bound.</p>
             <div id="author-path" class="author-path"></div>
 
             <div class="author-field">
@@ -2548,6 +2554,17 @@
   // What the participant was actually asked, restated above the numbers.
   // A rating of 3.7 means nothing without the question, and a route task's
   // success rate means nothing without knowing what counted as success.
+  // A route task's entry point is worth surfacing wherever its route is
+  // summarised — a task whose entry step isn't the first demonstrated one
+  // skips real screens, and that's easy to miss reading the route alone.
+  // Silent when the entry is the natural first step, which is still most
+  // tasks: nothing to say beyond what the route already shows.
+  function entryNote(t) {
+    const first = (t.path || [])[0];
+    if (!t.entry_step || !first || t.entry_step === first.step) return '';
+    return ` · starts at <b>${t.entry_step}</b>`;
+  }
+
   function taskEssence(t, kind) {
     const c = t.config || {};
     let meta;
@@ -2555,7 +2572,7 @@
       const route = (t.path || []).map(p =>
         (t.binding || []).includes(p.step) ? `<b>${p.value}</b>` : p.value).join(' → ');
       const bound = (t.binding || []).join(', ');
-      meta = `Route: ${route}<br>Counts as success when <b>${bound || 'nothing'}</b> matches`;
+      meta = `Route: ${route}<br>Counts as success when <b>${bound || 'nothing'}</b> matches${entryNote(t)}`;
     } else if (kind === 'multiple_choice') {
       const bits = [`${(c.choices || []).length} choices`,
                     c.select === 'multi' ? 'pick several' : 'pick one'];
@@ -2617,12 +2634,15 @@
 
     let specific = '';
     if (kind === 'app_route') {
-      const steps = (t.path || []).map(p => {
-        const bound = (t.binding || []).includes(p.step);
-        return `<li><b>${esc(p.step)}</b> → ${esc(p.value)}${
-          bound ? ' <span class="td-flag">must match</span>' : ' <span class="td-flag">free</span>'}</li>`;
+      const entryIdx = t.entry_step ? (t.path || []).findIndex(p => p.step === t.entry_step) : 0;
+      const steps = (t.path || []).map((p, i) => {
+        const skipped = entryIdx > 0 && i < entryIdx;
+        const bound = !skipped && (t.binding || []).includes(p.step);
+        const flag = skipped ? 'skipped — before the start' : (bound ? 'must match' : 'free');
+        return `<li><b>${esc(p.step)}</b> → ${esc(p.value)} <span class="td-flag">${flag}</span></li>`;
       }).join('');
       specific = row('Demonstrated route', `<ol>${steps}</ol>`)
+        + row('Starts at', entryIdx > 0 ? `<b>${esc(t.entry_step)}</b> — earlier steps are never shown` : '')
         + row('Counts as success', (t.binding || []).length
             ? `when ${(t.binding || []).map(b => `<b>${esc(b)}</b>`).join(' and ')} match`
             : '<i>nothing bound — every attempt would count</i>');
@@ -3676,6 +3696,11 @@
   // them, a goal binds only the ones you care about.
 
   let authoredPath = [];      // [{ step, value, binding }] in demonstration order
+  // Which demonstrated step the task actually begins on. Defaults to the
+  // first captured step (the old, only behaviour) the moment demonstration
+  // starts, so an author who never touches this control still saves a
+  // valid, explicit value rather than an implicit one nothing records.
+  let entryStep = null;
   let tasks = [];
 
   // Switching is a named function so views can send you to one another —
@@ -3720,16 +3745,37 @@
       el.innerHTML = '<div class="empty-note">Click through the app to capture a route.</div>';
       return;
     }
-    el.innerHTML = authoredPath.map((p, i) => `
-      <label class="path-step${p.binding ? '' : ' free'}">
-        <input type="checkbox" data-i="${i}" ${p.binding ? 'checked' : ''}>
+    const entryIndex = authoredPath.findIndex(p => p.step === entryStep);
+    el.innerHTML = authoredPath.map((p, i) => {
+      const skipped = entryIndex > -1 && i < entryIndex;
+      const role = skipped ? 'skipped — before the start' : (p.binding ? 'must match' : 'any answer');
+      return `
+      <label class="path-step${skipped ? ' skipped' : (p.binding ? '' : ' free')}">
+        <input type="radio" name="entry-radio" data-i="${i}" ${i === entryIndex ? 'checked' : ''}
+          title="Start the task here">
+        <input type="checkbox" data-i="${i}" ${p.binding && !skipped ? 'checked' : ''} ${skipped ? 'disabled' : ''}>
         <span class="path-step-name">${p.step}</span>
         <span class="path-step-value">${p.value}</span>
-        <span class="path-step-role">${p.binding ? 'must match' : 'any answer'}</span>
-      </label>`).join('');
+        <span class="path-step-role">${role}</span>
+      </label>`;
+    }).join('');
   }
 
   document.getElementById('author-path').addEventListener('change', (e) => {
+    const radio = e.target.closest('input[type="radio"]');
+    if (radio) {
+      const i = Number(radio.dataset.i);
+      entryStep = authoredPath[i].step;
+      // A step before the new start can no longer be bound — the
+      // participant will never see it, so "must match" there would make
+      // the task unsatisfiable. This changes several rows' disabled state
+      // at once, not just one, so a full re-render is simpler and correct
+      // here (unlike the checkbox below, a radio pick isn't mid-typing —
+      // there's no focus loss worth avoiding).
+      authoredPath.forEach((p, j) => { if (j < i) p.binding = false; });
+      renderAuthoredPath();
+      return;
+    }
     const box = e.target.closest('input[type="checkbox"]');
     if (!box) return;
     const row = box.closest('.path-step');
@@ -3748,14 +3794,21 @@
     const msg = e.data;
     if (!msg || msg.source !== 'idc-hci-author') return;
 
-    if (msg.type === 'reset') { authoredPath = []; renderAuthoredPath(); return; }
+    if (msg.type === 'reset') { authoredPath = []; entryStep = null; renderAuthoredPath(); return; }
     if (msg.type !== 'choice') return;
 
     // Re-answering a step during the demonstration replaces that step rather
     // than appending, so the captured route is what you settled on.
     const existing = authoredPath.find(p => p.step === msg.step);
-    if (existing) existing.value = msg.value;
-    else authoredPath.push({ step: msg.step, value: msg.value, binding: true });
+    if (existing) {
+      existing.value = msg.value;
+    } else {
+      authoredPath.push({ step: msg.step, value: msg.value, binding: true });
+      // The first step captured starts as the entry point — same as
+      // every task before this control existed. An author who never
+      // touches "start here" gets exactly the old behaviour.
+      if (entryStep === null) entryStep = msg.step;
+    }
     renderAuthoredPath();
   });
 
@@ -4165,6 +4218,7 @@
     document.getElementById('form-question').hidden = true;
     document.getElementById('form-app_route').hidden = true;
     authoredPath = [];
+    entryStep = null;
     renderAuthoredPath();
     document.getElementById('task-name').value = '';
     document.getElementById('task-goal').value = '';
@@ -4210,7 +4264,7 @@
     const { error } = await supabaseClient.from('tasks').insert({
       task_id: crypto.randomUUID(), app: currentApp, name, goal_text: goal, kind: 'app_route',
       path: authoredPath.map(({ step, value }) => ({ step, value })),
-      binding, position: nextPosition()
+      binding, entry_step: entryStep, position: nextPosition()
     });
     btn.disabled = false;
 
@@ -4290,7 +4344,7 @@
         (t.binding || []).includes(p.step) ? `<b>${p.value}</b>` : p.value).join(' → ');
       const scoring = (t.binding || []).length === (t.path || []).length
         ? 'exact path' : `goal · ${(t.binding || []).join(', ')} must match`;
-      return `${tag} ${route} <span style="color:#8A8578">— ${scoring}</span>`;
+      return `${tag} ${route} <span style="color:#8A8578">— ${scoring}${entryNote(t)}</span>`;
     };
 
     const banner = inSeq.length

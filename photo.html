@@ -683,9 +683,11 @@
     },
 
     // A fresh attempt starts logged out, which is where a participant
-    // handed "find the surfing dog" should begin.
-    resetApp: () => {
-      screen = 'logged_out';
+    // handed "find the surfing dog" should begin — unless the task named
+    // a later entry step (e.g. 'chats'), so a task about messaging isn't
+    // forced through the login screens it never asked about.
+    resetApp: (entryStep) => {
+      screen = SCREENS.includes(entryStep) ? entryStep : 'logged_out';
       overlay = null;
       chatWith = null;
       searchText = '';

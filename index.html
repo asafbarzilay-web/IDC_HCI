@@ -658,9 +658,22 @@
       question: () => document.getElementById('step-content')
     },
 
-    // A fresh attempt at the selector.
-    resetApp: () => {
+    // A fresh attempt at the selector — starting at step 0 unless the task
+    // named a later entry step, so a task only about the shape screen
+    // isn't forced through number and letter first. Reuses the same
+    // number→index map the dashboard's previews use, since the two name
+    // the same four positions. Skipped steps get a placeholder answer so
+    // a run landing past them (or on 'success') still has something to
+    // show rather than null.
+    resetApp: (entryStep) => {
       state.step = 0; state.number = null; state.letter = null; state.shape = null;
+      const idx = entryStep ? PREVIEW_STEP_INDEX[entryStep] : undefined;
+      if (idx) {
+        state.step = idx;
+        if (idx >= 1) state.number = '1';
+        if (idx >= 2) state.letter = 'A';
+        if (idx >= 3) state.shape = 'circle';
+      }
       render();
     },
 

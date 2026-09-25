@@ -56,8 +56,11 @@ window.Study = (function () {
     // never shows a task, which is what an app that cannot run one should
     // do — see `runsTasks` in the dashboard's APPS manifest.
     slots: {},
-    // Put the app back to a clean first screen for a fresh route attempt.
-    resetApp: () => {},
+    // Put the app back to a clean state for a fresh route attempt, landing
+    // on `entryStep` if the task named one — otherwise the app's own true
+    // first screen. An app ignoring the argument still resets correctly;
+    // it just always lands at the beginning, the old behaviour.
+    resetApp: (entryStep) => {},
     // 'app' | 'question' | 'done'. Lets the app hide its own chrome —
     // a Back button belongs to the app, not to the question over it.
     chrome: () => {},
@@ -385,7 +388,12 @@ window.Study = (function () {
       answers = {};
       resetClickSeq();
       cfg.chrome('app');
-      cfg.resetApp();
+      // A task can name where it begins — the demonstrated step marked as
+      // the start — so a participant is not forced through screens the
+      // task deliberately isn't testing (login, to reach chat). Steps
+      // before that entry point were never bound (see the dashboard's
+      // authoring UI), so scoring is unaffected either way.
+      cfg.resetApp(t.entry_step || null);
       return;
     }
 
