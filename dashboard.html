@@ -319,13 +319,20 @@
      flexible fraction column gave it far more room than it ever uses,
      leaving the card mostly blank. Sized to its content instead, capped
      so a longer one (a typed search query) still wraps rather than
-     stretching the row — and the space that frees up goes to Screen,
-     which actually benefits from it: a bigger thumbnail reads better. */
+     stretching the row.
+     That alone isn't enough, though: giving Screen the remaining 1fr just
+     moves the same problem there whenever the ROW's own container is
+     wide — which it is on a narrower browser window, where the
+     app-plus-list grid stacks to one column and this list gets the full
+     page width to itself. A row has no business being that wide just
+     because its container is; capped below so it stays a sensible,
+     consistent size in both the side-by-side and the stacked layout. */
   .path-head, .path-step {
     display: grid;
     grid-template-columns: 30px 30px minmax(160px, 1fr) fit-content(180px);
     align-items: center;
     gap: 10px;
+    max-width: 640px;
   }
   .path-head {
     padding: 0 12px 6px;
