@@ -275,16 +275,19 @@
   }
   .panel-head h2 { margin: 0; }
 
+  /* Favours the app column: it has to be big enough to actually click
+     buttons in, which a 50/50 split with the demonstrated-route list
+     never was — every target rendered at roughly 60% size. */
   .author-grid {
     display: grid;
-    grid-template-columns: minmax(320px, 1fr) minmax(300px, 1fr);
+    grid-template-columns: minmax(440px, 1.55fr) minmax(340px, 1fr);
     gap: 26px;
     align-items: start;
     margin-top: 18px;
     padding-top: 18px;
     border-top: 1px solid #E5E1D4;
   }
-  @media (max-width: 900px) { .author-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px) { .author-grid { grid-template-columns: 1fr; } }
 
   .author-grid h3 {
     font-size: 11px; font-weight: 500; color: #8A8578;
@@ -292,8 +295,13 @@
   }
   .author-hint { font-size: 13px; color: #8A8578; margin: 0 0 12px; }
 
+  /* Height scales with the viewport rather than a fixed 460px, so a
+     tall monitor gets a frame close to actual size instead of the same
+     cramped box on every screen. Each app already scales its content to
+     fit whatever box it's given (see shvil.html's "fit" mode), so a
+     bigger box is a straight win with nothing else to change. */
   .author-frame-wrap {
-    height: 460px;
+    height: clamp(480px, 72vh, 780px);
     border: 1px solid #E0DBCE;
     border-radius: 12px;
     overflow: hidden;
@@ -303,40 +311,69 @@
 
   .author-path { margin-bottom: 18px; }
 
-  .path-step {
-    display: flex;
+  /* Header and rows share one grid template so their columns line up.
+     Labelling "Start" and "Match" here once, instead of spelling out
+     "must match" / "any answer" on every single row, is what a plain
+     checkbox column needs to be self-explanatory. */
+  .path-head, .path-step {
+    display: grid;
+    grid-template-columns: 30px 30px minmax(110px, 1.15fr) minmax(70px, 0.85fr);
     align-items: center;
     gap: 10px;
-    padding: 10px 12px;
+  }
+  .path-head {
+    padding: 0 12px 6px;
+    font-size: 10px; font-weight: 600; color: #8A8578;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .path-head span { text-align: center; }
+  .path-head span:nth-child(3), .path-head span:nth-child(4) { text-align: left; }
+
+  .path-step {
+    padding: 8px 12px;
     border: 1px solid #E5E1D4;
     border-radius: 10px;
     background: #FAF9F5;
     margin-bottom: 8px;
   }
-  .path-step input { accent-color: #C15F3C; cursor: pointer; flex-shrink: 0; }
-  /* Sized for 'number' and 'shape'; photo's screens are 'logged_out' and
-     'search_results', which overran the fixed 56px and printed on top of
-     the value beside them. Wraps instead of clipping -- a truncated screen
-     name in a route you are about to save is worth more room than the row
-     saves by being one line high. */
+  .path-step input[type="radio"], .path-step input[type="checkbox"] {
+    accent-color: #C15F3C; cursor: pointer; justify-self: center;
+    width: 16px; height: 16px;
+  }
+  .path-step input:disabled { cursor: not-allowed; }
+
+  .path-step-screen { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  /* The live thumbnail, not the raw step id, is what makes a row
+     recognisable at a glance — reuses the same previewStep mechanism the
+     heatmap panels already use elsewhere in this dashboard. */
+  .path-thumb {
+    position: relative; width: 68px; height: 46px; flex: 0 0 auto;
+    border: 1px solid #E0DBCE; border-radius: 6px; overflow: hidden;
+    background: #F0EEE6;
+  }
+  .path-thumb iframe {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    border: none; pointer-events: none;
+  }
   .path-step-name {
     font-size: 11px; color: #8A8578; text-transform: uppercase;
-    letter-spacing: 0.05em; width: 92px; flex-shrink: 0;
-    line-height: 1.3; overflow-wrap: anywhere;
+    letter-spacing: 0.05em; line-height: 1.3; overflow-wrap: anywhere;
+    min-width: 0;
   }
+  .path-step-name .skip-flag { display: block; font-style: italic; text-transform: none; letter-spacing: 0; }
   .path-step-value {
-    font-family: Newsreader, Georgia, serif; font-size: 19px; flex: 1;
+    font-family: Newsreader, Georgia, serif; font-size: 17px;
     min-width: 0; overflow-wrap: anywhere;
   }
-  .path-step-role { font-size: 12px; color: #8A8578; }
   .path-step.free { opacity: 0.62; }
-  .path-step.free .path-step-role { font-style: italic; }
   /* Before the chosen start: the participant never sees this screen, so
      it cannot be bound either — dimmed further than a merely-free step
      and its binding checkbox is disabled rather than just unticked. */
   .path-step.skipped { opacity: 0.4; }
-  .path-step.skipped .path-step-role { font-style: italic; }
-  .path-step input[type="radio"] { margin-right: -2px; }
+  @media (max-width: 640px) {
+    .path-head, .path-step { grid-template-columns: 26px 26px 1fr; }
+    .path-step-value { grid-column: 2 / 4; padding-left: 26px; }
+  }
 
   .author-field { margin-bottom: 12px; }
   .author-field label {
@@ -772,6 +809,14 @@
      at the top. */
   #tasks-panel.authoring #task-list,
   #tasks-panel.authoring .panel-head { display: none; }
+
+  /* The dashboard's page wrapper caps at 880px everywhere else, a
+     deliberate reading width for text-heavy panels (stats, task lists,
+     results). Authoring is different: it has to fit a real, clickable
+     app next to the route list, and 880px split two ways made every
+     target in the app render at roughly 60% size. Widened only while
+     authoring is open — every other panel keeps its normal width. */
+  .wrap:has(#tasks-panel.authoring) { max-width: 1400px; }
 
   .author-head {
     display: flex;
@@ -1553,8 +1598,11 @@
 
           <div>
             <h3>What counts as success</h3>
-            <p class="author-hint">Tick the steps that must match — untick one to leave it free, any answer there is fine. The dot picks where the task begins; steps before it are skipped and can't be bound.</p>
-            <div id="author-path" class="author-path"></div>
+            <p class="author-hint">Pick where the task begins and which steps must match — untick a step to leave it free, any answer there is fine. Steps before the start are skipped and can't be bound.</p>
+            <div class="author-path" id="author-path-wrap">
+              <div class="path-head"><span>Start</span><span>Match</span><span>Screen</span><span>Captured</span></div>
+              <div id="author-path"></div>
+            </div>
 
             <div class="author-field">
               <label for="task-name">Task name</label>
@@ -3741,23 +3789,32 @@
 
   function renderAuthoredPath() {
     const el = document.getElementById('author-path');
+    const wrap = document.getElementById('author-path-wrap');
     if (!authoredPath.length) {
+      wrap.querySelector('.path-head').hidden = true;
       el.innerHTML = '<div class="empty-note">Click through the app to capture a route.</div>';
       return;
     }
+    wrap.querySelector('.path-head').hidden = false;
     const entryIndex = authoredPath.findIndex(p => p.step === entryStep);
+    // A plain row, not a <label>: the row now holds two form controls
+    // (start, must-match), and a label wrapping more than one makes which
+    // one a click on the surrounding text activates browser-dependent.
+    // Each input is its own, deliberately-sized click target instead.
     el.innerHTML = authoredPath.map((p, i) => {
       const skipped = entryIndex > -1 && i < entryIndex;
-      const role = skipped ? 'skipped — before the start' : (p.binding ? 'must match' : 'any answer');
       return `
-      <label class="path-step${skipped ? ' skipped' : (p.binding ? '' : ' free')}">
+      <div class="path-step${skipped ? ' skipped' : (p.binding ? '' : ' free')}">
         <input type="radio" name="entry-radio" data-i="${i}" ${i === entryIndex ? 'checked' : ''}
-          title="Start the task here">
-        <input type="checkbox" data-i="${i}" ${p.binding && !skipped ? 'checked' : ''} ${skipped ? 'disabled' : ''}>
-        <span class="path-step-name">${p.step}</span>
+          title="Start the task on this screen">
+        <input type="checkbox" data-i="${i}" ${p.binding && !skipped ? 'checked' : ''} ${skipped ? 'disabled' : ''}
+          title="${skipped ? 'Skipped — before the start, cannot be bound' : 'Must match to count as success'}">
+        <span class="path-step-screen">
+          <span class="path-thumb"><iframe src="${previewSrc(p.step)}" tabindex="-1" title="${p.step} screen"></iframe></span>
+          <span class="path-step-name">${p.step}${skipped ? '<span class="skip-flag">skipped</span>' : ''}</span>
+        </span>
         <span class="path-step-value">${p.value}</span>
-        <span class="path-step-role">${role}</span>
-      </label>`;
+      </div>`;
     }).join('');
   }
 
@@ -3783,7 +3840,6 @@
     // Update this row in place. Re-rendering the list would replace the very
     // checkbox being used and throw away keyboard focus mid-interaction.
     row.classList.toggle('free', !box.checked);
-    row.querySelector('.path-step-role').textContent = box.checked ? 'must match' : 'any answer';
   });
 
   // Only trust messages from this origin and from the frame we embedded.
