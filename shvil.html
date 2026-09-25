@@ -1283,16 +1283,34 @@
     const size = t.closest('[data-size]');
     if (size) { choose('size:' + size.dataset.size, () => { dogSize = size.dataset.size; }); return; }
 
+    // Multi-select toggles (traits, filters, tags below) record the whole
+    // selection after the click, not just which one was touched — 'trait:
+    // Needs meds' means the same thing whether that click added it or
+    // removed it, so a demonstration ticking three traits would report
+    // three different-looking "final answers" for the same screen and the
+    // dashboard's "re-answering a step replaces it" rule would keep only
+    // the last one. A sorted, complete snapshot is unambiguous and is also
+    // what "replace on re-answer" actually needs: the state as it stood
+    // after the most recent click, not one delta.
     const trait = t.closest('[data-trait]');
-    if (trait) { const tr = trait.dataset.trait; choose('trait:' + tr, () => {
-      dogTraits = dogTraits.includes(tr) ? dogTraits.filter(x => x !== tr) : dogTraits.concat([tr]);
-    }); return; }
+    if (trait) {
+      const tr = trait.dataset.trait;
+      const next = dogTraits.includes(tr) ? dogTraits.filter(x => x !== tr) : dogTraits.concat([tr]);
+      choose('traits:' + (next.length ? next.slice().sort().join(', ') : 'none'), () => { dogTraits = next; });
+      return;
+    }
 
     const viewBtn = t.closest('[data-view]');
     if (viewBtn) { const v = viewBtn.dataset.view; choose('view:' + v, () => { view = v; }); return; }
 
     const filter = t.closest('[data-filter]');
-    if (filter) { const k = filter.dataset.filter; choose('filter:' + k, () => { filters = { ...filters, [k]: !filters[k] }; }); return; }
+    if (filter) {
+      const k = filter.dataset.filter;
+      const next = { ...filters, [k]: !filters[k] };
+      const on = Object.keys(next).filter(key => next[key]).sort();
+      choose('filters:' + (on.length ? on.join(', ') : 'none'), () => { filters = next; });
+      return;
+    }
 
     const sort = t.closest('[data-sort]');
     if (sort) { choose('sort:' + sort.dataset.sort, () => { sortKey = sort.dataset.sort; }); return; }
@@ -1343,9 +1361,12 @@
     if (star) { choose('star:' + star.dataset.star, () => { rating = Number(star.dataset.star); }); return; }
 
     const tag = t.closest('[data-tag]');
-    if (tag) { const tg = tag.dataset.tag; choose('tag:' + tg, () => {
-      tags = tags.includes(tg) ? tags.filter(x => x !== tg) : tags.concat([tg]);
-    }); return; }
+    if (tag) {
+      const tg = tag.dataset.tag;
+      const next = tags.includes(tg) ? tags.filter(x => x !== tg) : tags.concat([tg]);
+      choose('tags:' + (next.length ? next.slice().sort().join(', ') : 'none'), () => { tags = next; });
+      return;
+    }
 
     const tipBtn = t.closest('[data-tip]');
     if (tipBtn) { choose('tip:' + tipBtn.dataset.tip, () => { tip = Number(tipBtn.dataset.tip); }); return; }
