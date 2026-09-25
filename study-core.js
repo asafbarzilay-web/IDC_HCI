@@ -323,7 +323,7 @@ window.Study = (function () {
     try {
       const { data, error } = await supabaseClient
         .from('tasks')
-        .select('task_id, kind, name, goal_text, config, path, binding, position')
+        .select('task_id, kind, name, goal_text, config, path, binding, entry_step, position')
         // Without this the two studies' batteries interleave by position
         // and a participant is handed a route through an app they cannot see.
         .eq('app', cfg.app)

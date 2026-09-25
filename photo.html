@@ -446,6 +446,15 @@
     font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0;
   }
   .task-goal .retry { margin-top: 8px; font-size: 13px; color: #E88B6A; }
+  /* The one control offering the whole study, not an escape hatch like
+     give-up — a real solid button (same treatment as the app's own
+     primary actions), not muted underlined text easy to miss. */
+  .start-tasks-btn {
+    background: var(--ink); color: #fff; border: 2px solid var(--ink); border-radius: 6px;
+    padding: 13px 22px; font-weight: 900; font-size: 13px; letter-spacing: 0.52px;
+    text-transform: uppercase; cursor: pointer;
+  }
+  .start-tasks-btn:hover { background: #fff; color: var(--ink); }
 
   /* The question types are styled by study-core.js. Its palette defaults to
      the shapes app's cream; this app is black on white, so it restates the
@@ -930,19 +939,36 @@
   // The prompt lives outside the phone on purpose. Drawn inside it, the
   // banner would cover the screen being measured and its own clicks would
   // land in that screen's heatmap.
+  // Set once free_then_tasks offers the battery, cleared once they accept.
+  // Being offered the tasks is not the same as being in one
+  // (Study.inBattery() is still false the whole time someone free-plays
+  // before starting), so renderPrompt() needs its own memory of this —
+  // otherwise the very next render(), triggered by any ordinary click
+  // while exploring, wipes the offer off the screen along with everything
+  // else redrawn from scratch.
+  let offeringTasks = false;
+
   function renderPrompt() {
     const wrap = document.getElementById('prompt');
     const goal = document.getElementById('task-goal');
     const t = Study.currentTask();
     const active = t && t.kind === 'app_route';
-    wrap.hidden = !Study.inBattery();
-    goal.innerHTML = active ? `
-      <div class="step">Your task</div>
-      <div class="goal">${Study.escapeHtml(t.goal_text)}</div>
-      ${Study.routeRetry ? '<div class="retry">Not the one we asked for — keep looking.</div>' : ''}
-      <button class="give-up" id="giveup-btn">I can't find it — move on</button>` : '';
-    const g = document.getElementById('giveup-btn');
-    if (g) g.addEventListener('click', () => Study.giveUp());
+    wrap.hidden = !Study.inBattery() && !offeringTasks;
+    if (active) {
+      goal.innerHTML = `
+        <div class="step">Your task</div>
+        <div class="goal">${Study.escapeHtml(t.goal_text)}</div>
+        ${Study.routeRetry ? '<div class="retry">Not the one we asked for — keep looking.</div>' : ''}
+        <button class="give-up" id="giveup-btn">I can't find it — move on</button>`;
+      const g = document.getElementById('giveup-btn');
+      if (g) g.addEventListener('click', () => Study.giveUp());
+    } else if (offeringTasks) {
+      goal.innerHTML = '<button class="btn start-tasks-btn" id="start-tasks-btn">Start the tasks →</button>';
+      const s = document.getElementById('start-tasks-btn');
+      if (s) s.addEventListener('click', () => { offeringTasks = false; Study.beginTasks(); });
+    } else {
+      goal.innerHTML = '';
+    }
   }
 
   function render() {
@@ -1105,15 +1131,7 @@
       // free_then_tasks: they explore first and start when they say so.
       // Rendered as a control on the prompt rather than inside the phone,
       // for the same reason the task banner is.
-      if (offer) {
-        const wrap = document.getElementById('prompt');
-        wrap.hidden = false;
-        document.getElementById('task-goal').innerHTML =
-          '<button class="give-up" id="start-tasks">Start the tasks →</button>';
-        document.getElementById('start-tasks').addEventListener('click', () => {
-          Study.beginTasks();
-        });
-      }
+      if (offer) { offeringTasks = true; renderPrompt(); }
     })();
   }
 </script>
