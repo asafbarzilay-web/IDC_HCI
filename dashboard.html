@@ -414,12 +414,19 @@
   }
   .task-status.muted { background: #F0EEE6; border-color: #E5E1D4; color: #6B665A; }
 
+  /* A row is a small card now: a head line (who/what/actions) and a meta
+     line below it (the route, as chips, not an inline arrow-chain of
+     text) rather than one dense wrapped line trying to say everything
+     at once. */
   .task-row {
-    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    padding: 12px 14px; border: 1px solid #E5E1D4; border-radius: 10px;
-    background: #FAF9F5; margin-bottom: 8px;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 14px 16px; border: 1px solid #E5E1D4; border-radius: 12px;
+    background: #FAF9F5; margin-bottom: 10px;
+    box-shadow: 0 1px 2px rgba(41,38,31,0.03);
   }
   .task-row.active { border-color: #C15F3C; background: #F6E9E1; }
+  .task-row-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .task-row-meta { padding-left: 38px; }
 
   .task-seq {
     font-family: Newsreader, Georgia, serif;
@@ -447,9 +454,25 @@
     letter-spacing: 0.05em; text-transform: uppercase;
     margin: 22px 0 10px;
   }
-  .task-name { font-weight: 600; font-size: 14px; }
-  .task-detail { font-size: 13px; color: #6B665A; flex: 1; min-width: 200px; }
-  .task-detail b { color: #29261F; font-weight: 600; }
+  .task-name {
+    font-family: Newsreader, Georgia, serif; font-weight: 600;
+    font-size: 17px; color: #29261F;
+  }
+
+  /* The route, as a chain of small chips instead of plain arrow-joined
+     text — each step's role (must match / free / skipped) is a colour,
+     not a word you have to read on every single one. */
+  .route-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+  .route-chip {
+    font-family: Newsreader, Georgia, serif; font-size: 13.5px; line-height: 1.3;
+    padding: 3px 11px; border-radius: 999px;
+    border: 1px solid #E5E1D4; background: #fff; color: #6B665A;
+  }
+  .route-chip.bound { background: #F6E9E1; border-color: #E4CDBE; color: #A94E2E; font-weight: 600; }
+  .route-chip.skipped { opacity: 0.5; text-decoration: line-through; }
+  .route-arrow { color: #C9C2B2; font-size: 12px; }
+  .task-meta-text { display: block; font-size: 12.5px; color: #8A8578; margin-top: 5px; }
+  .task-meta-text b { color: #6B665A; font-weight: 600; }
   .task-badge {
     font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
     text-transform: uppercase; color: #C15F3C;
@@ -1200,6 +1223,41 @@
     background: #F0EEE6; border: 1px solid #E0DBCE;
     border-radius: 999px; padding: 1px 9px; margin: 0 5px 4px 0;
   }
+
+  /* The demonstrated route, reviewed after the fact — same thumbnail
+     idea as the authoring panel's route list, so a screen is
+     recognisable here too instead of just its raw id. */
+  .rt-steps { display: flex; flex-direction: column; gap: 6px; }
+  .rt-step {
+    display: grid; grid-template-columns: 72px minmax(90px, 1fr) minmax(70px, auto) auto;
+    align-items: center; gap: 10px;
+    padding: 6px 10px; border: 1px solid #E5E1D4; border-radius: 10px; background: #fff;
+  }
+  .rt-step.bound { border-color: #E4CDBE; background: #FDF8F3; }
+  .rt-step.skipped { opacity: 0.5; }
+  .rt-thumb {
+    position: relative; width: 72px; height: 48px; flex: none;
+    border: 1px solid #E0DBCE; border-radius: 6px; overflow: hidden; background: #F0EEE6;
+  }
+  .rt-thumb iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; pointer-events: none; }
+  .rt-step-name {
+    font-size: 11px; color: #8A8578; text-transform: uppercase; letter-spacing: 0.05em;
+    overflow-wrap: anywhere;
+  }
+  .rt-start-flag {
+    display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: none; color: #A94E2E;
+    background: #F6E9E1; border-radius: 999px; padding: 1px 8px;
+  }
+  .rt-step-value {
+    font-family: Newsreader, Georgia, serif; font-size: 15px; color: #29261F;
+    overflow-wrap: anywhere;
+  }
+  .rt-step-flag {
+    font-size: 11px; color: #6B665A; background: #F0EEE6; border: 1px solid #E0DBCE;
+    border-radius: 999px; padding: 2px 9px; white-space: nowrap; justify-self: start;
+  }
+  .rt-step.bound .rt-step-flag { color: #A94E2E; background: #F6E9E1; border-color: #E4CDBE; font-weight: 600; }
   .task-expand {
     font-family: inherit; font-size: 12px; line-height: 1;
     width: 28px; height: 28px; flex: none;
@@ -2695,15 +2753,24 @@
 
     let specific = '';
     if (kind === 'app_route') {
+      // A thumbnail per step, same previewStep mechanism the authoring
+      // panel's own route list uses — a screen is recognisable at a
+      // glance in a way its raw id ('dogsetup') is not, and results
+      // reviewed later benefit from the same visual language as authoring.
       const entryIdx = t.entry_step ? (t.path || []).findIndex(p => p.step === t.entry_step) : 0;
       const steps = (t.path || []).map((p, i) => {
         const skipped = entryIdx > 0 && i < entryIdx;
         const bound = !skipped && (t.binding || []).includes(p.step);
-        const flag = skipped ? 'skipped — before the start' : (bound ? 'must match' : 'free');
-        return `<li><b>${esc(p.step)}</b> → ${esc(p.value)} <span class="td-flag">${flag}</span></li>`;
+        const flag = skipped ? 'skipped' : (bound ? 'must match' : 'free');
+        const starts = i === entryIdx && entryIdx > 0;
+        return `<div class="rt-step${skipped ? ' skipped' : bound ? ' bound' : ''}">
+          <span class="rt-thumb"><iframe src="${previewSrc(p.step)}" tabindex="-1" title="${esc(p.step)} screen"></iframe></span>
+          <span class="rt-step-name">${esc(p.step)}${starts ? '<span class="rt-start-flag">starts here</span>' : ''}</span>
+          <span class="rt-step-value">${esc(p.value)}</span>
+          <span class="rt-step-flag">${flag}</span>
+        </div>`;
       }).join('');
-      specific = row('Demonstrated route', `<ol>${steps}</ol>`)
-        + row('Starts at', entryIdx > 0 ? `<b>${esc(t.entry_step)}</b> — earlier steps are never shown` : '')
+      specific = row('Demonstrated route', `<div class="rt-steps">${steps}</div>`)
         + row('Counts as success', (t.binding || []).length
             ? `when ${(t.binding || []).map(b => `<b>${esc(b)}</b>`).join(' and ')} match`
             : '<i>nothing bound — every attempt would count</i>');
@@ -4370,8 +4437,14 @@
     const outSeq = tasks.filter(t => t.position == null && !t.hidden);
     const hidden = tasks.filter(t => t.hidden);
 
+    const escRow = x => String(x).replace(/[&<>"]/g,
+      ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
     // A row has to say what it is at a glance: a battery mixes route tasks
     // with questions, and they are scored in completely different ways.
+    // Route tasks render as a chip chain — each step's role (must match /
+    // free / skipped) is a colour on its own chip, not a word repeated
+    // after every arrow in one long line of text.
     const describe = t => {
       const kind = t.kind || 'app_route';
       const tag = `<span class="task-kind-tag">${(TASK_KINDS[kind] || {}).label || kind}</span>`;
@@ -4384,15 +4457,15 @@
         if (c.other) bits.push("'other'");
         if (c.opt_out) bits.push("'opt out'");
         if (c.shuffle) bits.push('shuffled');
-        return `${tag} <span style="color:#8A8578">${bits.join(' · ')}</span>`;
+        return `${tag} <span class="task-meta-text">${bits.join(' · ')}</span>`;
       }
 
       if (kind === 'yes_no') {
-        return `${tag} <span style="color:#8A8578">${c.display === 'emotions' ? 'faces' : 'icons'}</span>`;
+        return `${tag} <span class="task-meta-text">${c.display === 'emotions' ? 'faces' : 'icons'}</span>`;
       }
 
       if (kind === 'simple_input') {
-        return `${tag} <span style="color:#8A8578">${c.input_type || 'text'} answer</span>`;
+        return `${tag} <span class="task-meta-text">${c.input_type || 'text'} answer</span>`;
       }
 
       if (kind === 'matrix') {
@@ -4400,59 +4473,67 @@
         const bits = [`${st} statement${st === 1 ? '' : 's'}`, `${ch} choice${ch === 1 ? '' : 's'}`,
                       c.select === 'multi' ? 'pick several' : 'pick one'];
         if (c.opt_out) bits.push("'opt out'");
-        return `${tag} <span style="color:#8A8578">${bits.join(' · ')}</span>`;
+        return `${tag} <span class="task-meta-text">${bits.join(' · ')}</span>`;
       }
 
       if (kind === 'opinion_scale') {
         const lo = c.start_at_one === false ? 0 : 1;
-        return `${tag} <span style="color:#8A8578">${c.display || 'number'} · `
+        return `${tag} <span class="task-meta-text">${c.display || 'number'} · `
              + `${lo}–${(c.steps || 10) - (lo === 0 ? 1 : 0)}</span>`;
       }
 
-      const route = (t.path || []).map(p =>
-        (t.binding || []).includes(p.step) ? `<b>${p.value}</b>` : p.value).join(' → ');
+      const entryIdx = t.entry_step ? (t.path || []).findIndex(p => p.step === t.entry_step) : 0;
+      const chips = (t.path || []).map((p, i) => {
+        const skipped = entryIdx > 0 && i < entryIdx;
+        const bound = !skipped && (t.binding || []).includes(p.step);
+        return `<span class="route-chip${skipped ? ' skipped' : bound ? ' bound' : ''}">${escRow(p.value)}</span>`;
+      }).join('<span class="route-arrow">→</span>');
       const scoring = (t.binding || []).length === (t.path || []).length
         ? 'exact path' : `goal · ${(t.binding || []).join(', ')} must match`;
-      return `${tag} ${route} <span style="color:#8A8578">— ${scoring}${entryNote(t)}</span>`;
+      return `<div class="route-chips">${tag}${chips}</div>`
+           + `<span class="task-meta-text">${scoring}${entryNote(t)}</span>`;
     };
+
+    // One row template for all three lists (in sequence, not in sequence,
+    // hidden) — they differed only in which action buttons they offered,
+    // which does not justify three copies of the same markup to keep in
+    // step whenever the row itself changes.
+    const taskRow = (t, { seq, draggable, actions, dim } = {}) => `
+      <div class="task-row${draggable ? ' active' : ''}"${draggable ? ` draggable="true" data-seq-id="${t.task_id}"` : ''}
+           ${dim ? 'style="opacity:0.7"' : ''}>
+        <div class="task-row-head">
+          ${draggable ? '<span class="task-grip" title="Drag to reorder">⠿</span>' : ''}
+          ${seq != null ? `<span class="task-seq">${seq}</span>` : ''}
+          <span class="task-icon">${taskIcon(t.kind)}</span>
+          <span class="task-name">${escRow(t.name)}</span>
+          <span class="task-actions">
+            <button class="task-expand" data-expand="${t.task_id}" aria-expanded="false"
+              title="Show what this task asks">&#9662;</button>
+            ${actions}
+          </span>
+        </div>
+        <div class="task-row-meta">${describe(t)}</div>
+      </div>
+      <div class="task-detail-panel" data-panel="${t.task_id}" hidden>${taskDetails(t)}</div>`;
 
     const banner = inSeq.length
       ? `<div class="task-status">Participants work through <b>${inSeq.length} task${inSeq.length > 1 ? 's' : ''}</b>, in order.</div>`
       : `<div class="task-status muted">No tasks in the sequence — participants use the flow freely.</div>`;
 
-    const seqRows = inSeq.map((t, i) => `
-      <div class="task-row active" draggable="true" data-seq-id="${t.task_id}">
-        <span class="task-grip" title="Drag to reorder">⠿</span>
-        <span class="task-seq">${i + 1}</span>
-        <span class="task-icon">${taskIcon(t.kind)}</span>
-        <span class="task-name">${t.name}</span>
-        <span class="task-detail">${describe(t)}</span>
-        <span class="task-actions">
-          <button class="task-expand" data-expand="${t.task_id}" aria-expanded="false"
-            title="Show what this task asks">&#9662;</button>
-          <button class="task-btn primary" data-results="${t.task_id}">Results</button>
-          <button class="task-btn" data-remove="${t.task_id}"
-            title="Stops participants being asked this. Nothing is deleted.">Deactivate</button>
-        </span>
-      </div>
-      <div class="task-detail-panel" data-panel="${t.task_id}" hidden>${taskDetails(t)}</div>`).join('');
+    const seqRows = inSeq.map((t, i) => taskRow(t, {
+      seq: i + 1, draggable: true,
+      actions: `<button class="task-btn primary" data-results="${t.task_id}">Results</button>
+        <button class="task-btn" data-remove="${t.task_id}"
+          title="Stops participants being asked this. Nothing is deleted.">Deactivate</button>`
+    })).join('');
 
     const outRows = outSeq.length ? `
-      <h3 class="task-subhead">Not in the sequence</h3>` + outSeq.map(t => `
-      <div class="task-row">
-        <span class="task-icon">${taskIcon(t.kind)}</span>
-        <span class="task-name">${t.name}</span>
-        <span class="task-detail">${describe(t)}</span>
-        <span class="task-actions">
-          <button class="task-expand" data-expand="${t.task_id}" aria-expanded="false"
-            title="Show what this task asks">&#9662;</button>
-          <button class="task-btn primary" data-results="${t.task_id}">Results</button>
-          <button class="task-btn" data-add="${t.task_id}">Activate</button>
-          <button class="task-btn" data-hide="${t.task_id}"
-            title="Files it away. Its answers are kept and it can be restored.">Hide</button>
-        </span>
-      </div>
-      <div class="task-detail-panel" data-panel="${t.task_id}" hidden>${taskDetails(t)}</div>`).join('') : '';
+      <h3 class="task-subhead">Not in the sequence</h3>` + outSeq.map(t => taskRow(t, {
+      actions: `<button class="task-btn primary" data-results="${t.task_id}">Results</button>
+        <button class="task-btn" data-add="${t.task_id}">Activate</button>
+        <button class="task-btn" data-hide="${t.task_id}"
+          title="Files it away. Its answers are kept and it can be restored.">Hide</button>`
+    })).join('') : '';
 
     // Hidden tasks are out of the way but never out of reach: the toggle
     // says how many there are, so nothing is silently missing.
@@ -4462,19 +4543,11 @@
       </button>` : '';
 
     const hiddenRows = (showHidden && hidden.length) ? `
-      <h3 class="task-subhead">Hidden</h3>` + hidden.map(t => `
-      <div class="task-row" style="opacity:0.7">
-        <span class="task-icon">${taskIcon(t.kind)}</span>
-        <span class="task-name">${t.name}</span>
-        <span class="task-detail">${describe(t)}</span>
-        <span class="task-actions">
-          <button class="task-expand" data-expand="${t.task_id}" aria-expanded="false"
-            title="Show what this task asks">&#9662;</button>
-          <button class="task-btn primary" data-results="${t.task_id}">Results</button>
-          <button class="task-btn" data-unhide="${t.task_id}">Restore</button>
-        </span>
-      </div>
-      <div class="task-detail-panel" data-panel="${t.task_id}" hidden>${taskDetails(t)}</div>`).join('') : '';
+      <h3 class="task-subhead">Hidden</h3>` + hidden.map(t => taskRow(t, {
+      dim: true,
+      actions: `<button class="task-btn primary" data-results="${t.task_id}">Results</button>
+        <button class="task-btn" data-unhide="${t.task_id}">Restore</button>`
+    })).join('') : '';
 
     list.innerHTML = banner + seqRows + outRows + hiddenToggle + hiddenRows;
 
