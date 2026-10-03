@@ -470,6 +470,16 @@
   }
   .route-chip.bound { background: #F6E9E1; border-color: #E4CDBE; color: #A94E2E; font-weight: 600; }
   .route-chip.skipped { opacity: 0.5; text-decoration: line-through; }
+  .gaze-chip {
+    font: inherit; font-size: 11px; color: #8A8578; background: none;
+    border: 1px solid #E0DBCE; border-radius: 999px; padding: 2px 9px;
+    cursor: pointer; margin-left: 6px; white-space: nowrap;
+  }
+  .gaze-chip:hover { border-color: #C15F3C; color: #29261F; }
+  .gaze-chip.on { color: #3A6E7C; border-color: #9FC0C8; background: #EEF5F6; }
+  .gaze-chip:disabled { opacity: 0.5; cursor: default; }
+  .gaze-toggle { margin-top: 6px; }
+  .gaze-toggle.moot { opacity: 0.55; }
   .route-arrow { color: #C9C2B2; font-size: 12px; }
   .task-meta-text { display: block; font-size: 12.5px; color: #8A8578; margin-top: 5px; }
   .task-meta-text b { color: #6B665A; font-weight: 600; }
@@ -1632,6 +1642,12 @@
         takes effect for the next person who opens it.</p>
         <div class="mode-grid" id="mode-grid"></div>
         <div class="empty-note" id="mode-note" hidden></div>
+        <!-- Eye tracking for free exploration. Each route task has its own
+             switch, set when the task is defined. -->
+        <div class="q-toggle gaze-toggle" id="free-gaze-row">
+          <div>Eye tracking during free exploration<small id="free-gaze-hint">Asks participants for their webcam and records roughly where they look while they explore. Desktop only; demonstrative accuracy.</small></div>
+          <input type="checkbox" id="free-gaze">
+        </div>
         <div class="mode-link">Send participants: <code id="app-link">index.html</code></div>
       </div>
 
@@ -1682,6 +1698,12 @@
             <div class="author-field">
               <label for="task-goal">What the participant reads</label>
               <textarea id="task-goal" rows="2" placeholder="e.g. Select the triangle."></textarea>
+            </div>
+            <!-- Off by default. On, participants on a desktop are asked for
+                 their camera once, before anything else, and calibrate. -->
+            <div class="q-toggle gaze-toggle">
+              <div>Eye tracking<small>Asks participants for their webcam and records roughly where they look during this task. Desktop only; demonstrative accuracy.</small></div>
+              <input type="checkbox" id="task-gaze">
             </div>
 
             <div id="author-error"></div>
@@ -2848,6 +2870,7 @@
   };
 
   let studyMode = 'tasks';
+  let gazeFree = false;
 
   function renderModePicker() {
     const runs = APPS[currentApp].runsTasks;
@@ -2870,14 +2893,50 @@
 
     document.getElementById('app-link').textContent =
       new URL(APPS[currentApp].file, location.href).href;
+
+    // "Tasks only" never gives anyone free time, so the switch would be a
+    // setting with no effect. Shown greyed rather than hidden, so it is
+    // clear where it lives when the mode changes back.
+    const box = document.getElementById('free-gaze');
+    box.checked = gazeFree;
+    const moot = studyMode === 'tasks';
+    box.disabled = moot;
+    document.getElementById('free-gaze-row').classList.toggle('moot', moot);
+    document.getElementById('free-gaze-hint').textContent = moot
+      ? 'Not used in "Tasks only" — participants never explore freely. Eye tracking for a task is switched on per task.'
+      : 'Asks participants for their webcam and records roughly where they look while they explore. Desktop only; demonstrative accuracy.';
   }
 
   async function loadStudyMode() {
+    // select('*'): a column list written before gaze_free existed would
+    // fail outright until the migration runs, losing the mode with it.
     const { data, error } = await supabaseClient
-      .from('study_settings').select('mode').eq('app', currentApp).maybeSingle();
-    if (!error && data) studyMode = data.mode || 'tasks';
+      .from('study_settings').select('*').eq('app', currentApp).maybeSingle();
+    if (!error && data) {
+      studyMode = data.mode || 'tasks';
+      gazeFree = data.gaze_free === true;
+    }
     renderModePicker();
   }
+
+  document.getElementById('free-gaze').addEventListener('change', async (e) => {
+    const wanted = e.target.checked;
+    const prev = gazeFree;
+    gazeFree = wanted;
+    // .select() so the answer is a row count, not just "no error": a
+    // missing column or a policy that filters the row out would otherwise
+    // look exactly like success.
+    const { data, error } = await supabaseClient
+      .from('study_settings').update({ gaze_free: wanted, updated_at: new Date().toISOString() })
+      .eq('app', currentApp).select('app');
+    if (error || !data || !data.length) {
+      gazeFree = prev;
+      renderModePicker();
+      document.getElementById('task-list').insertAdjacentHTML('afterbegin',
+        `<div class="error-box">Couldn't change eye tracking: ${error ? error.message : 'no settings row was updated'}`
+        + `${error && /gaze_free/.test(error.message) ? ' — run supabase_migration_gaze_and_entry_state.sql first.' : ''}</div>`);
+    }
+  });
 
   document.getElementById('mode-grid').addEventListener('click', async (e) => {
     const card = e.target.closest('[data-mode]');
@@ -3236,7 +3295,7 @@
       try {
         if (frame.contentDocument
             && frame.contentDocument.readyState === 'complete'
-            && frame.contentDocument.querySelector('.wrap')) draw();
+            && frame.contentWindow.Study) draw();
       } catch { /* the load listener will cover it */ }
     });
   }
@@ -3255,7 +3314,7 @@
       try {
         if (frame.contentDocument
             && frame.contentDocument.readyState === 'complete'
-            && frame.contentDocument.querySelector('.wrap')) draw();
+            && frame.contentWindow.Study) draw();
       } catch { /* not same-origin yet; the load listener will cover it */ }
       const stats = document.getElementById(`${id}-stats`);
       const paintStats = () => {
@@ -3823,7 +3882,7 @@
   // the demonstrated route plus which steps bind. Exact path binds all of
   // them, a goal binds only the ones you care about.
 
-  let authoredPath = [];      // [{ step, value, binding }] in demonstration order
+  let authoredPath = [];      // [{ step, value, binding, state }] in demonstration order
   // Which demonstrated step the task actually begins on. Defaults to the
   // first captured step (the old, only behaviour) the moment demonstration
   // starts, so an author who never touches this control still saves a
@@ -3939,7 +3998,13 @@
     if (existing) {
       existing.value = msg.value;
     } else {
-      authoredPath.push({ step: msg.step, value: msg.value, binding: true });
+      // `state` is the app's snapshot from the first choice made on this
+      // screen — i.e. what the author had built up on the way here. Kept
+      // from that first visit, not refreshed on re-answers: a later
+      // snapshot would carry this screen's own picks, and a task starting
+      // here must not arrive with the answer already chosen.
+      authoredPath.push({ step: msg.step, value: msg.value, binding: true,
+                         state: msg.state || null });
       // The first step captured starts as the entry point — same as
       // every task before this control existed. An author who never
       // touches "start here" gets exactly the old behaviour.
@@ -4358,6 +4423,7 @@
     renderAuthoredPath();
     document.getElementById('task-name').value = '';
     document.getElementById('task-goal').value = '';
+    document.getElementById('task-gaze').checked = false;
     document.getElementById('author-error').innerHTML = '';
     document.getElementById('task-author').hidden = false;
     document.getElementById('tasks-panel').classList.add('authoring');
@@ -4397,11 +4463,21 @@
 
     const btn = document.getElementById('save-task-btn');
     btn.disabled = true;
-    const { error } = await supabaseClient.from('tasks').insert({
+    const entry = authoredPath.find(p => p.step === entryStep);
+    const row = {
       task_id: crypto.randomUUID(), app: currentApp, name, goal_text: goal, kind: 'app_route',
       path: authoredPath.map(({ step, value }) => ({ step, value })),
-      binding, entry_step: entryStep, position: nextPosition()
-    });
+      binding, entry_step: entryStep, position: nextPosition(),
+      // What the app looked like on arrival at the start step, so a task
+      // beginning partway into a flow restores the author's picks instead
+      // of the app's defaults. Null when the task starts at the beginning:
+      // there is nothing before it to restore.
+      entry_state: entry && authoredPath.indexOf(entry) > 0 ? entry.state : null
+    };
+    // Only sent when on, so a task without eye tracking still saves
+    // against a database that has not had the gaze migration yet.
+    if (document.getElementById('task-gaze').checked) row.gaze = true;
+    const { error } = await supabaseClient.from('tasks').insert(row);
     btn.disabled = false;
 
     if (error) { errEl.innerHTML = `<div class="error-box">Couldn't save: ${error.message}</div>`; return; }
@@ -4491,7 +4567,13 @@
       const scoring = (t.binding || []).length === (t.path || []).length
         ? 'exact path' : `goal · ${(t.binding || []).join(', ')} must match`;
       return `<div class="route-chips">${tag}${chips}</div>`
-           + `<span class="task-meta-text">${scoring}${entryNote(t)}</span>`;
+           + `<span class="task-meta-text">${scoring}${entryNote(t)}</span>`
+           // Switchable after answers exist, unlike the task's content: it
+           // changes what is measured from now on, not what the task asks,
+           // so no existing answer is reinterpreted by it.
+           + ` <button class="gaze-chip${t.gaze ? ' on' : ''}" data-gaze="${t.task_id}"
+                 title="${t.gaze ? 'Eye tracking is on for this task — click to turn off' : 'Eye tracking is off for this task — click to turn on'}">`
+           + `${t.gaze ? '● Eye tracking on' : '○ Eye tracking off'}</button>`;
     };
 
     // One row template for all three lists (in sequence, not in sequence,
@@ -4676,6 +4758,24 @@
       panel.hidden = !open;
       expand.setAttribute('aria-expanded', String(open));
       expand.innerHTML = open ? '&#9652;' : '&#9662;';
+      return;
+    }
+
+    const gz = e.target.closest('[data-gaze]');
+    if (gz) {
+      const t = tasks.find(x => x.task_id === gz.dataset.gaze);
+      if (!t) return;
+      gz.disabled = true;
+      const { data, error } = await supabaseClient.from('tasks')
+        .update({ gaze: !t.gaze }).eq('task_id', t.task_id).select('task_id');
+      if (error || !data || !data.length) {
+        gz.disabled = false;
+        document.getElementById('task-list').insertAdjacentHTML('afterbegin', `<div class="error-box">Couldn't change eye tracking: `
+          + `${error ? error.message : 'no task was updated'}`
+          + `${error && /gaze/.test(error.message) ? ' — run supabase_migration_gaze_and_entry_state.sql first.' : ''}</div>`);
+        return;
+      }
+      loadTasks();
       return;
     }
 

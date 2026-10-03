@@ -1,24 +1,33 @@
 /* =====================================================================
    study-core.js — the half of a study app that is not about the app.
 
-   Two participant apps now run from this repo: the shapes selector
-   (index.html) and the photo app built from the Figma prototype
-   (photo.html). Almost none of the instrumentation differs between them.
-   Who the participant is, how a session is opened and reopened, how a
-   write reaches Supabase without racing the session row it references,
-   and how a click becomes a coordinate are all the same question asked
-   of two different screens.
+   Every participant app in this repo loads this file, and the set is
+   expected to keep growing: each new product is one more HTML file that
+   calls Study.configure() and gets the whole study platform with it. The
+   dashboard's APPS manifest lists which apps exist today; nothing in here
+   names one.
 
-   The alternative was a copy of this in each app file, which is the same
-   bargain the dashboard turned down: two copies of every rule, and every
-   bug fixed twice. Extracted while there was still only one copy to move.
+   What lives here, because none of it differs between products:
+     - identity, the session lifecycle, and every write to Supabase,
+       ordered so no row races the session row it references
+     - click logging against a fixed measured box, stamped with the task
+       in progress
+     - the task battery: study modes, route tasks with entry points and
+       their scoring (direct / indirect / gave up), and the six question
+       types with their CSS
+     - webcam gaze tracking: consent, calibration, fixations, and the stop
+       control — switched on per task and for free exploration from the
+       dashboard, off unless asked for
+     - author mode, which reports a demonstrated route to the dashboard
 
-   WHAT AN APP MUST SUPPLY (see configure() below): the element clicks are
-   measured against, which screen is showing, and what a click landed on.
-   Those are the only three things this file cannot know for itself.
-
-   NOT HERE YET: gaze and the task battery still live in index.html. They
-   move next, and nothing in this file's shape assumes they will not.
+   WHAT AN APP MUST SUPPLY (see `cfg` below): the box coordinates are
+   measured against, which screen and overlay are showing, what a click
+   landed on, where the battery draws, how to reset for a fresh attempt
+   (optionally restoring a snapshot of state taken while authoring), which
+   chrome to hide behind a question, and whether an attempt can run out of
+   road. Those are the things this file cannot know for itself. Adding an
+   app means answering them — see the `instrumenting-a-new-app` skill —
+   not copying anything out of an existing app.
    ===================================================================== */
 
 window.Study = (function () {
@@ -47,9 +56,12 @@ window.Study = (function () {
     onAppScreen: () => true,
     overlayActive: () => false,
     hitOf: () => 'none',
-    taskId: () => null,
-    gazeState: () => null,
-    studyMode: () => null,
+    // Which task a click belongs to, and the session's gaze state, are
+    // not hooks any more: both are things this file already knows. As
+    // hooks they were copied into each app, and two apps copied
+    // `taskId: () => null` — so every click made during one of their tasks
+    // was filed as free play. Anything an app still passes for them is
+    // ignored.
 
     // ---- the task battery's hooks ----------------------------------
     // Where the battery draws. An app that supplies neither slot simply
@@ -60,7 +72,18 @@ window.Study = (function () {
     // on `entryStep` if the task named one — otherwise the app's own true
     // first screen. An app ignoring the argument still resets correctly;
     // it just always lands at the beginning, the old behaviour.
-    resetApp: (entryStep) => {},
+    //
+    // `entryState` is whatever `snapshot()` returned at that step while
+    // the author demonstrated, or null for a task saved without one. A
+    // screen partway into a flow depends on what was picked on the way
+    // (checkout needs a walker, a day and a time); restoring the author's
+    // picks is what makes it the screen they meant, not a generic one.
+    resetApp: (entryStep, entryState) => {},
+    // The app's state as plain JSON, minus the current screen. Taken in
+    // author mode with every captured choice, so a task can later start
+    // partway in with that state restored. An app with no state worth
+    // restoring leaves this returning null.
+    snapshot: () => null,
     // 'app' | 'question' | 'done'. Lets the app hide its own chrome —
     // a Back button belongs to the app, not to the question over it.
     chrome: () => {},
@@ -134,6 +157,12 @@ window.Study = (function () {
   // exist first. begin() keeps the in-flight insert as a promise and every
   // later write waits on it — no ordering races, no orphans.
   function begin(isRestart) {
+    // Send the abandoned attempt's buffered gaze before the session id
+    // changes underneath it. flushGaze() captures the old session
+    // synchronously, so no await is needed here.
+    closeFixation();
+    flushGaze();
+
     sessionId = newId();
     resetClickSeq();
     if (TRACKING_OFF || !window.supabaseClient) {
@@ -150,8 +179,8 @@ window.Study = (function () {
         app: cfg.app,
         platform,
         is_restart: isRestart,
-        gaze_state: cfg.gazeState(),
-        study_mode: cfg.studyMode()
+        gaze_state: gazeState,
+        study_mode: studyMode
       })
       .then(({ error }) => { if (error) console.error('startSession failed', error); })
       .catch(err => console.error('startSession failed', err));
@@ -185,7 +214,7 @@ window.Study = (function () {
       // over the app while the current screen still reads as the first one,
       // so without this guard a run of calibration clicks lands in that
       // screen's heatmap and every one of them scores as a mis-click.
-      if (cfg.overlayActive()) return;
+      if (gazeOverlayUp || cfg.overlayActive()) return;
 
       // Question screens are not the app. Their clicks were being written
       // as clicks on the first step, every one scoring as a mis-click
@@ -234,7 +263,7 @@ window.Study = (function () {
         hit,
         // Stamped with the task in progress so two route tasks that both
         // pass through one screen do not share a heatmap. Null in free play.
-        task_id: cfg.taskId()
+        task_id: currentTaskId()
       });
     }, true);
   }
@@ -293,6 +322,7 @@ window.Study = (function () {
   let routeRetry = false;     // show the "not the one" note on this pass
 
   const currentTask = () => (taskIndex >= 0 ? battery[taskIndex] : null);
+  const currentTaskId = () => { const t = currentTask(); return t ? t.task_id : null; };
   const inBattery = () => !!currentTask();
 
   // Whether the app itself is what is on screen. A question renders into
@@ -307,15 +337,23 @@ window.Study = (function () {
 
   // Read before the session row is written, so the session can record the
   // mode it actually ran under. Falls back to 'tasks', which is how the
-  // app behaved before modes existed.
-  async function loadStudyMode() {
-    if (TRACKING_OFF || !window.supabaseClient) return 'tasks';
+  // app behaved before modes existed, and to no free-play gaze.
+  //
+  // select('*') rather than a column list, here and in loadBattery(): a
+  // list written before a column existed silently drops that column, and
+  // that is exactly how entry_step was saved, shown in the dashboard, and
+  // never once reached a participant. It also means a column that does
+  // not exist yet (a migration not run) is simply absent instead of
+  // failing the whole read and dropping every participant to free play.
+  async function loadSettings() {
+    const fallback = { mode: 'tasks', gaze_free: false };
+    if (TRACKING_OFF || !window.supabaseClient) return fallback;
     try {
       const { data, error } = await supabaseClient
-        .from('study_settings').select('mode').eq('app', cfg.app).maybeSingle();
-      if (error || !data) return 'tasks';
-      return data.mode || 'tasks';
-    } catch { return 'tasks'; }
+        .from('study_settings').select('*').eq('app', cfg.app).maybeSingle();
+      if (error || !data) return fallback;
+      return { mode: data.mode || 'tasks', gaze_free: data.gaze_free === true };
+    } catch { return fallback; }
   }
 
   async function loadBattery() {
@@ -323,7 +361,7 @@ window.Study = (function () {
     try {
       const { data, error } = await supabaseClient
         .from('tasks')
-        .select('task_id, kind, name, goal_text, config, path, binding, entry_step, position')
+        .select('*')
         // Without this the two studies' batteries interleave by position
         // and a participant is handed a route through an app they cannot see.
         .eq('app', cfg.app)
@@ -392,8 +430,10 @@ window.Study = (function () {
       // the start — so a participant is not forced through screens the
       // task deliberately isn't testing (login, to reach chat). Steps
       // before that entry point were never bound (see the dashboard's
-      // authoring UI), so scoring is unaffected either way.
-      cfg.resetApp(t.entry_step || null);
+      // authoring UI), so scoring is unaffected either way. The state the
+      // author had built up by that step comes with it, so the screen is
+      // the one they demonstrated rather than one filled with defaults.
+      cfg.resetApp(t.entry_step || null, t.entry_state || null);
       return;
     }
 
@@ -847,10 +887,15 @@ window.Study = (function () {
       const b = e.currentTarget;
       b.disabled = true;
       b.textContent = 'Finishing…';
+      // The camera is only worth mentioning to someone who turned it on.
+      // Telling a participant who declined that their camera is off is at
+      // best confusing, and at worst suggests it had been on all along.
+      const wasTracking = gazeOn;
+      await stopTracking('participant finished the study');
       let label = 'Thanks';
       try { label = (await cfg.onFinish()) || label; }
       catch (err) { console.warn('onFinish failed', err); }
-      b.textContent = label;
+      b.textContent = wasTracking ? 'Thanks — camera off' : label;
     });
   }
 
@@ -885,7 +930,10 @@ window.Study = (function () {
       task_id: t ? t.task_id : null
     });
 
-    reportToAuthor('choice', { step, value });
+    // The snapshot is taken before the app applies this choice, so it is
+    // the state the author had when they reached this screen — which is
+    // what a task starting here needs restored, not the state after it.
+    reportToAuthor('choice', { step, value, state: AUTHOR_MODE ? safeSnapshot() : null });
     return considerRoute();
   }
 
@@ -901,16 +949,29 @@ window.Study = (function () {
                               window.location.origin);
   }
 
-  // Read the mode, open the session, then load the battery — in that
-  // order. The mode has to be known before the session row is written so
-  // the row can record which mode it ran under; the battery needs a session
-  // to attach its answers to, so loading it earlier would race the insert
-  // it depends on.
+  // Read the settings and the battery, settle eye tracking, then open the
+  // session — in that order. The mode and the gaze decision both have to
+  // be known before the session row is written, so it can record them as
+  // an insert (visitors may append rows and nothing more). And whether to
+  // ask for the camera at all depends on the battery: it is asked for
+  // only if something this participant will do has eye tracking switched
+  // on. Loading the battery is a read; its answers wait on the session
+  // through write(), so reading it first races nothing.
   async function startStudy({ beforeSession } = {}) {
-    studyMode = await loadStudyMode();
+    const settings = await loadSettings();
+    studyMode = settings.mode;
+    battery = studyMode === 'free' ? [] : await loadBattery();
+
+    // Free play only happens when the mode allows it — or when "tasks
+    // only" has nothing to run, in which case the app is free play anyway.
+    gazeFree = settings.gaze_free
+      && (studyMode !== 'tasks' || battery.length === 0);
+    const gazeTasks = battery.some(t => t.kind === 'app_route' && t.gaze === true);
+    gazeState = (gazeFree || gazeTasks) ? await setUpGaze() : null;
+
     if (beforeSession) await beforeSession();
     begin(false);
-    battery = studyMode === 'free' ? [] : await loadBattery();
+    if (gazeOn) startGazeUpkeep();
 
     if (studyMode === 'tasks' && battery.length) {
       taskIndex = -1;
@@ -934,6 +995,755 @@ window.Study = (function () {
   }
 
   function giveUp() { finishRouteTask('gave_up'); }
+
+  // Never lets an app's snapshot break authoring: a hook that throws, or
+  // returns something JSON cannot hold, means "no state", not "no route".
+  function safeSnapshot() {
+    try {
+      const s = cfg.snapshot && cfg.snapshot();
+      return s == null ? null : JSON.parse(JSON.stringify(s));
+    } catch (err) {
+      console.warn('snapshot failed; this step will start with default state', err);
+      return null;
+    }
+  }
+
+
+  // ==================================================================
+  // Webcam gaze tracking
+  //
+  // WebGazer estimates a gaze point from the webcam entirely in the
+  // browser. Frames are never uploaded and there is no column that could
+  // hold one — only the estimated point is written, in exactly the same
+  // box-relative coordinates as clicks so the two overlay cleanly.
+  //
+  // Off unless the dashboard asks for it: per route task, and separately
+  // for free exploration. The camera is asked for once, up front, if
+  // anything this participant will do wants it — calibrating halfway
+  // through a battery would put a minute of dot-clicking inside a task's
+  // timing. Once on, it records only while the current context wants it.
+  //
+  // Accuracy is region-level, not button-level, and that was measured
+  // rather than assumed: it answers "did they scan the whole row before
+  // choosing", not "were they looking at B or at C". The dashboard says
+  // so next to every gaze heatmap.
+  // ==================================================================
+
+  const GAZE_LIB = 'https://cdn.jsdelivr.net/npm/webgazer@3.5.3/dist/webgazer.min.js';
+
+  // WebGazer detects faces with MediaPipe, whose assets it does NOT bundle.
+  // Its default for these is the relative path './mediapipe/face_mesh',
+  // i.e. it expects you to self-host them. Left alone it resolves against
+  // the page's own directory, 404s, and then calls the loader global that
+  // was never defined — surfacing as "TypeError: t is not a function"
+  // AFTER the camera has already opened, which makes it look like a camera
+  // problem when it is a missing-asset problem.
+  const FACE_MESH_PATH = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh';
+  // 20 Hz. At 10 Hz a fixation was only two or three samples long, which
+  // is too few to tell a steady look apart from two noisy ones.
+  const GAZE_SAMPLE_MS = 50;
+  const GAZE_FLUSH_MS = 5000;
+  const GAZE_MAX_BUFFER = 400;   // offline safety valve, in fixations
+
+  // Samples are clustered into fixations in the browser and only the
+  // settled ones are uploaded. Storing every sample was ~450 rows per
+  // participant for a picture that blurs at this radius regardless.
+  //
+  // In pixels, because that is what the tracker's noise is measured in.
+  // It used to be 0.15 of the shapes app's 560px column (~84px); as a
+  // fraction it would mean 56px on photo's 375px phone and 177px across
+  // Shvil's 1180px frame — the same constant meaning three different
+  // things. Webcam gaze jitters by more than ~80px between consecutive
+  // samples even while you hold still, so a tighter radius starts a new
+  // fixation on almost every sample and the whole run collapses.
+  const FIXATION_RADIUS_PX = 84;
+  // Two samples. The floor exists only to drop single-sample blips mid-
+  // saccade; it is deliberately not a real fixation threshold. Set higher
+  // (150ms) it discarded roughly 70% of tracked time, most of it on short
+  // decision screens.
+  const FIXATION_MIN_MS = 100;
+
+  // Five clicks a dot, nine dots: 45 training samples. Fifteen produced a
+  // prediction that wandered regardless of where the participant looked.
+  const CALIB_CLICKS = 5;
+  // Which entry in CALIB_POINTS sits at screen centre, under the hint text.
+  const CENTRE_POINT = 4;
+  // Edge coverage matters for stabilising the fit, not only for edge
+  // accuracy — five points with three clicks each could not fit at all.
+  const CALIB_POINTS = [
+    [12, 14], [50, 14], [88, 14],
+    [12, 50], [50, 50], [88, 50],
+    [12, 86], [50, 86], [88, 86]
+  ];
+  // Short moving average over the raw predictions. Clustering a jittery
+  // signal directly means the jitter, not the eye, decides where one
+  // fixation ends and the next begins.
+  const SMOOTH_WINDOW = 3;
+
+  // null when eye tracking was never on the table for this participant
+  // (nothing asked for it); otherwise one of the values the sessions
+  // table's CHECK allows.
+  let gazeState = null;
+  let gazeOn = false;
+  let gazeFree = false;        // free exploration records gaze
+  let gazeOverlayUp = false;   // consent or calibration owns the screen
+  let gazeBuffer = [];         // closed fixations waiting to be sent
+  let fixation = null;         // the look currently being accumulated
+  let gazeLastSample = 0;
+  let gazeRecent = [];
+  let gazeDropped = 0;         // fixations too brief to keep; watched in debug
+  let gazeSent = 0, gazeSamples = 0;
+  // What a fixation belongs to: screen, overlay and task. When any of
+  // them changes, the look in progress ends — the same position on the
+  // next screen means something else — and the screen clock restarts.
+  let gazeCtx = null, gazeCtxSince = Date.now();
+
+  // Does what is on screen right now want its gaze recorded?
+  function gazeWanted() {
+    const t = currentTask();
+    if (t) return t.kind === 'app_route' && t.gaze === true;
+    // Before the battery (or with none): free exploration. After it the
+    // participant is on "All done", which belongs to nothing.
+    return taskIndex === -1 && gazeFree;
+  }
+
+  // Asking for the camera at all only makes sense on a device that has a
+  // usable one and a context allowed to open it. Phones are excluded on
+  // purpose: the camera points at the face from an angle that changes
+  // every second the phone is held, so the estimate is noise.
+  function gazeSupported() {
+    return !TRACKING_OFF
+      && platform === 'desktop'
+      && window.isSecureContext
+      && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  // Size of the regression's training set. Zero means the calibration
+  // clicks never reached it, which is a different problem entirely from a
+  // model that was trained and still fits badly.
+  function trainingSamples() {
+    try {
+      const reg = webgazer.getRegression()[0];
+      if (reg.screenXClicksArray && reg.screenXClicksArray.data) return reg.screenXClicksArray.data.length;
+      const d = reg.getData();
+      return Array.isArray(d) ? d.length : '?';
+    } catch { return '?'; }
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = src;
+      el.onload = resolve;
+      el.onerror = () => reject(new Error(`could not load ${src}`));
+      document.head.appendChild(el);
+    });
+  }
+
+  // Captures the session and its readiness promise synchronously, before
+  // any await — so a flush triggered by Start over sends the fixations it
+  // drained to the session they were actually recorded in, not the new one.
+  // Sends closed fixations only: closing on the flush timer would chop a
+  // long look into five-second pieces and report it as several glances.
+  function flushGaze() {
+    if (!window.supabaseClient || !gazeBuffer.length) return Promise.resolve();
+    const rows = gazeBuffer;
+    gazeBuffer = [];
+    gazeSent += rows.length;
+    const sid = sessionId, ready = sessionReady;
+    return (async () => {
+      try {
+        await ready;
+        const { error } = await supabaseClient.from('gaze')
+          .insert(rows.map(r => ({ session_id: sid, ...r })));
+        if (error) console.error('insert into gaze failed', error);
+      } catch (err) {
+        console.error('insert into gaze failed', err);
+      }
+    })();
+  }
+
+  // Ends the fixation in progress and queues it, unless it was too brief
+  // to be a look. Safe to call at any time, including with none open.
+  function closeFixation() {
+    const f = fixation;
+    fixation = null;
+    if (!f) return;
+    // Span the samples it holds plus the interval each one stands for, so
+    // a single-sample fixation counts as the time it represents, not zero.
+    const dur_ms = (f.lastAt - f.startAt) + GAZE_SAMPLE_MS;
+    if (dur_ms < FIXATION_MIN_MS) { gazeDropped += 1; return; }
+    if (gazeBuffer.length >= GAZE_MAX_BUFFER) return;
+    gazeBuffer.push({ step: f.step, overlay: f.overlay, x: f.x, y: f.y,
+                      t_ms: f.t_ms, dur_ms, task_id: f.task_id });
+  }
+
+  function onGazeSample(data) {
+    if (!gazeOn || !data) return;
+    gazeSamples += 1;
+    const now = Date.now();
+    if (now - gazeLastSample < GAZE_SAMPLE_MS) return;
+    gazeLastSample = now;
+
+    // Track the context on every sample, recorded or not, so the screen
+    // clock is right when recording resumes on a later screen.
+    const step = cfg.currentStep();
+    const overlay = cfg.currentOverlay();
+    const taskId = currentTaskId();
+    const ctx = `${step}|${overlay}|${taskId}`;
+    if (ctx !== gazeCtx) {
+      closeFixation();
+      gazeRecent = [];
+      gazeCtx = ctx;
+      gazeCtxSince = now;
+    }
+
+    // A question is not the app, and a context that did not ask for gaze
+    // is not recorded — the camera stays on between gaze tasks rather
+    // than asking twice, but nothing outside them is written.
+    if (!step || !onAppScreen() || gazeOverlayUp || !gazeWanted()) {
+      closeFixation();
+      return;
+    }
+
+    // Same anchor as clicks: the app's measured box, not the viewport.
+    // Gaze and clicks are only comparable if they mean the same thing,
+    // and the dashboard draws both onto one preview.
+    const box = cfg.content();
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = (data.x - rect.left) / rect.width;
+    const y = (data.y - rect.top) / rect.height;
+    // A prediction comes back NaN while the face is out of frame. Storing
+    // that would poison every average computed over the box.
+    if (!isFinite(x) || !isFinite(y)) return;
+
+    // Kept for the debug readout: the mapped value alone cannot show
+    // whether the raw prediction was already in the wrong place.
+    if (DEBUG) window.__lastGaze = { x: data.x, y: data.y, cx: x, cy: y };
+
+    gazeRecent.push({ x, y });
+    if (gazeRecent.length > SMOOTH_WINDOW) gazeRecent.shift();
+    const sx = gazeRecent.reduce((n, p) => n + p.x, 0) / gazeRecent.length;
+    const sy = gazeRecent.reduce((n, p) => n + p.y, 0) / gazeRecent.length;
+
+    // Still in the same place: fold this sample into the open fixation.
+    // A running mean, so a long look sits at its centre rather than
+    // wherever its first stray sample landed.
+    if (fixation
+        && Math.abs(sx - fixation.x) * rect.width  < FIXATION_RADIUS_PX
+        && Math.abs(sy - fixation.y) * rect.height < FIXATION_RADIUS_PX) {
+      fixation.x += (sx - fixation.x) / (fixation.n + 1);
+      fixation.y += (sy - fixation.y) / (fixation.n + 1);
+      fixation.n += 1;
+      fixation.lastAt = now;
+      return;
+    }
+
+    closeFixation();
+    fixation = {
+      // Pinned now, not at close: a look belongs to the screen, overlay
+      // and task it started in.
+      step, overlay, task_id: taskId,
+      t_ms: Math.max(0, now - gazeCtxSince),
+      x: sx, y: sy, n: 1, startAt: now, lastAt: now
+    };
+  }
+
+  // ---- participant-facing UI ------------------------------------------
+  // Injected only when an app actually asks for the camera, so an app
+  // whose study never uses gaze carries none of it. Colours are variables
+  // defaulting to the shapes app's palette, like the task CSS above; an
+  // app can restate them.
+  const GAZE_CSS = `
+  :root {
+    --gaze-bg: #F0EEE6; --gaze-surface: #FAF9F5; --gaze-ink: #29261F;
+    --gaze-ink-2: #5C574C; --gaze-muted: #8A8578; --gaze-line: #D8D3C6;
+    --gaze-accent: #C15F3C; --gaze-accent-hover: #A94E2E; --gaze-accent-soft: #F6E9E1;
+    --gaze-accent-line: #C9A491;
+    --gaze-heading: 'Newsreader', Georgia, serif;
+  }
+  /* [hidden] only sets display:none from the UA stylesheet, so a class
+     that sets display at all beats it — which here is the difference
+     between a working study and a blank screen. */
+  .sg-overlay[hidden], .sg-stop[hidden], .sg-note[hidden] { display: none !important; }
+  .sg-overlay {
+    position: fixed; inset: 0; z-index: 2147483000;
+    background: var(--gaze-bg); display: flex; align-items: center; justify-content: center;
+    padding: 32px; font-family: inherit; color: var(--gaze-ink);
+  }
+  .sg-card { max-width: 460px; }
+  .sg-card h1 {
+    font-family: var(--gaze-heading); font-size: 30px; font-weight: 500;
+    margin: 0 0 12px; letter-spacing: -0.01em; color: var(--gaze-ink);
+  }
+  .sg-card p { margin: 0 0 14px; font-size: 15px; line-height: 1.6; color: var(--gaze-ink-2); }
+  .sg-points { margin: 0 0 22px; padding-left: 18px; font-size: 14px; line-height: 1.7; color: var(--gaze-ink-2); }
+  .sg-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sg-btn {
+    font: inherit; font-size: 15px; border-radius: 10px; padding: 11px 20px;
+    cursor: pointer; border: 1px solid transparent; transition: all 0.2s ease;
+  }
+  .sg-btn.primary { background: var(--gaze-accent); color: var(--gaze-surface); }
+  .sg-btn.primary:hover { background: var(--gaze-accent-hover); }
+  .sg-btn.ghost { background: transparent; color: var(--gaze-ink-2); border-color: var(--gaze-line); }
+  .sg-btn.ghost:hover { color: var(--gaze-ink); }
+
+  /* Calibration is deliberately stark: anything else on screen competes
+     for the gaze we are trying to anchor to a known point. */
+  .sg-calib { display: block; padding: 0; }
+  .sg-calib-hint {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    text-align: center; max-width: 300px; pointer-events: none;
+  }
+  .sg-calib-hint strong { display: block; font-size: 17px; margin-bottom: 6px; }
+  .sg-calib-hint span { font-size: 14px; color: var(--gaze-ink-2); line-height: 1.6; }
+  /* The centre dot sits exactly where the hint is, so the hint fades
+     once that dot's turn comes around. */
+  .sg-calib-hint.dimmed { opacity: 0.15; }
+  .sg-dot {
+    position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px;
+    border-radius: 50%; border: 2px solid var(--gaze-accent);
+    background: rgba(193, 95, 60, 0.12); cursor: pointer; padding: 0;
+    transition: opacity 0.25s ease, transform 0.15s ease;
+  }
+  .sg-dot:hover { transform: scale(1.15); }
+  .sg-dot.done { opacity: 0.2; pointer-events: none; }
+  .sg-dot .fill {
+    position: absolute; inset: 2px; border-radius: 50%; background: var(--gaze-accent);
+    transform: scale(0); transition: transform 0.2s ease;
+  }
+  .sg-calib-progress {
+    position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%);
+    font-size: 13px; color: var(--gaze-ink-2);
+  }
+  .sg-calib-skip {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--gaze-surface); border-color: var(--gaze-accent-line);
+    color: var(--gaze-ink); font-size: 14px;
+  }
+  /* Says what skipping costs, right next to the button that does it. */
+  .sg-calib-skip-note {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: var(--gaze-muted); white-space: nowrap;
+  }
+
+  /* Always reachable while tracking is on. Consent that cannot be
+     withdrawn mid-run is not really consent. */
+  .sg-stop {
+    position: fixed; top: 16px; right: 16px; z-index: 2147482000;
+    display: inline-flex; align-items: center; gap: 7px;
+    font: inherit; font-size: 13px; color: var(--gaze-ink-2);
+    background: var(--gaze-surface); border: 1px solid var(--gaze-line);
+    border-radius: 999px; padding: 7px 14px; cursor: pointer;
+    box-shadow: 0 2px 10px rgba(41,38,31,0.10);
+  }
+  .sg-stop:hover { border-color: var(--gaze-accent); color: var(--gaze-ink); }
+  .sg-stop .rec { width: 8px; height: 8px; border-radius: 50%; background: var(--gaze-accent); }
+
+  /* A failure here is silent by design — the study must run regardless —
+     but silent also meant undiagnosable. This says what went wrong
+     without blocking anything. */
+  .sg-note {
+    position: fixed; left: 16px; bottom: 16px; z-index: 2147483001; max-width: 420px;
+    background: var(--gaze-accent-soft); border: 1px solid var(--gaze-accent-line);
+    border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.5;
+    color: var(--gaze-ink-2);
+  }
+  .sg-note code {
+    display: block; white-space: pre-wrap; margin-top: 4px; font-size: 11px;
+    color: #8A3D1E; word-break: break-word;
+  }
+
+  /* WebGazer parks its gaze dot, face overlay and feedback box at very
+     high z-index. Any of them left transparent would swallow clicks meant
+     for a calibration dot, and none of them is ever a click target. */
+  #webgazerGazeDot, #webgazerFaceOverlay, #webgazerFaceFeedbackBox { pointer-events: none !important; }
+  /* Its preview video: corner-parked so the participant can check their
+     framing, above the framing card that tells them to look at it. */
+  #webgazerVideoContainer {
+    pointer-events: none !important; position: fixed !important;
+    top: 16px !important; left: 16px !important; z-index: 2147483002 !important;
+    border-radius: 10px; overflow: hidden; opacity: 0.85;
+  }`;
+
+  const GAZE_HTML = `
+  <div class="sg-overlay" id="sg-consent" hidden>
+    <div class="sg-card">
+      <h1>Can we use your camera?</h1>
+      <p>This study can estimate roughly where you look on the screen while you use the app. It is optional — everything works exactly the same either way.</p>
+      <ul class="sg-points">
+        <li>The video never leaves your computer. Nothing is recorded or uploaded.</li>
+        <li>Only an estimate of where on the page you were looking is saved.</li>
+        <li>There is a setup step first: click nine dots, five times each. It takes about a minute.</li>
+      </ul>
+      <div class="sg-actions">
+        <button class="sg-btn primary" id="sg-allow">Use my camera</button>
+        <button class="sg-btn ghost" id="sg-decline">Continue without it</button>
+      </div>
+    </div>
+  </div>
+  <!-- Framing is confirmed here, while the preview is up and nothing else
+       is on screen. It cannot stay visible into calibration: the preview
+       sits over the top-left corner, directly on top of the dot there. -->
+  <div class="sg-overlay" id="sg-frame" hidden>
+    <div class="sg-card">
+      <h1>Can you see yourself?</h1>
+      <p>Your camera preview is in the top-left corner. Sit so your whole face fits inside the box, at a comfortable distance from the screen.</p>
+      <p>Good, even light on your face helps a lot. Avoid a bright window behind you.</p>
+      <p>From here on, keep your head as still as you can — head movement after calibration is the main reason the estimate drifts.</p>
+      <div class="sg-actions">
+        <button class="sg-btn primary" id="sg-frame-ready">I'm in frame</button>
+        <button class="sg-btn ghost" id="sg-frame-cancel">Continue without eye tracking</button>
+      </div>
+    </div>
+  </div>
+  <div class="sg-overlay sg-calib" id="sg-calib" hidden>
+    <div class="sg-calib-hint" id="sg-calib-hint">
+      <strong>Look at each dot and click it</strong>
+      <span>Five clicks per dot, nine dots. Look straight at each dot as you click it,
+      and keep your head still from here until the end — moving is what makes the estimate drift.</span>
+    </div>
+    <!-- Progress is shown rather than implied: a dot that cannot be
+         reached would otherwise stall the step with nothing to say so. -->
+    <div class="sg-calib-progress" id="sg-calib-progress"></div>
+    <button class="sg-btn ghost sg-calib-skip" id="sg-calib-skip">Skip this — no eye tracking</button>
+    <div class="sg-calib-skip-note">Everything works the same either way. Skipping turns the camera off.</div>
+  </div>
+  <button class="sg-stop" id="sg-stop" hidden><span class="rec"></span> Eye tracking on — stop</button>
+  <div class="sg-overlay" id="sg-confirm" hidden>
+    <div class="sg-card">
+      <h1>Stop eye tracking?</h1>
+      <p>Your camera turns off and nothing more is recorded. What was already measured is kept. Everything else carries on exactly as before.</p>
+      <p>This cannot be turned back on for this run.</p>
+      <div class="sg-actions">
+        <button class="sg-btn primary" id="sg-stop-confirm">Stop and turn off the camera</button>
+        <button class="sg-btn ghost" id="sg-stop-cancel">Keep tracking</button>
+      </div>
+    </div>
+  </div>
+  <div class="sg-note" id="sg-note" hidden></div>`;
+
+  let gazeUiReady = false;
+  const $g = id => document.getElementById(id);
+
+  function ensureGazeUi() {
+    if (gazeUiReady) return;
+    gazeUiReady = true;
+    const style = document.createElement('style');
+    style.id = 'study-gaze-css';
+    style.textContent = GAZE_CSS;
+    // Prepended for the same reason as the task CSS: the app's own
+    // stylesheet can restate the variables without !important.
+    document.head.insertBefore(style, document.head.firstChild);
+    document.body.insertAdjacentHTML('beforeend', GAZE_HTML);
+
+    $g('sg-stop').addEventListener('click', () => {
+      // Confirmed rather than immediate: it is one click away from the
+      // app itself, and an accidental stop cannot be undone mid-run.
+      gazeOverlayUp = true;
+      $g('sg-confirm').hidden = false;
+    });
+    $g('sg-stop-cancel').addEventListener('click', () => {
+      $g('sg-confirm').hidden = true;
+      gazeOverlayUp = false;
+    });
+    $g('sg-stop-confirm').addEventListener('click', async () => {
+      $g('sg-confirm').hidden = true;
+      gazeOverlayUp = false;
+      await stopTracking('participant used the stop control');
+    });
+  }
+
+  // Resolves with the button the participant pressed: true for the first.
+  function askOverlay(id, yesId, noId) {
+    return new Promise(resolve => {
+      const overlay = $g(id);
+      const done = (yes) => { overlay.hidden = true; resolve(yes); };
+      $g(yesId).addEventListener('click', () => done(true), { once: true });
+      $g(noId).addEventListener('click', () => done(false), { once: true });
+      overlay.hidden = false;
+    });
+  }
+
+  // WebGazer trains on clicks: it pairs the face it sees with the point it
+  // knows you are looking at. An untrained tracker still returns
+  // confident-looking numbers — which is why skipping calibration turns
+  // tracking off rather than proceeding.
+  function runCalibration() {
+    return new Promise(resolve => {
+      const overlay = $g('sg-calib');
+      const hint = $g('sg-calib-hint');
+      const progress = $g('sg-calib-progress');
+      overlay.querySelectorAll('.sg-dot').forEach(d => d.remove());
+
+      const totalClicks = CALIB_POINTS.length * CALIB_CLICKS;
+      let clicks = 0;
+      let remaining = CALIB_POINTS.length;
+      // Counts clicks, not finished dots: a full pass of one click each
+      // otherwise still read "0 of 9", which looks like nothing registers.
+      const showProgress = () => {
+        progress.textContent =
+          `${clicks} of ${totalClicks} clicks · ${CALIB_POINTS.length - remaining} of ${CALIB_POINTS.length} dots done`;
+      };
+      showProgress();
+
+      CALIB_POINTS.forEach(([px, py], i) => {
+        const dot = document.createElement('button');
+        dot.className = 'sg-dot';
+        dot.style.left = px + '%';
+        dot.style.top = py + '%';
+        dot.innerHTML = '<span class="fill"></span>';
+        let hits = 0;
+        dot.addEventListener('click', () => {
+          hits += 1;
+          clicks += 1;
+          dot.querySelector('.fill').style.transform = `scale(${hits / CALIB_CLICKS})`;
+          showProgress();
+          if (i === CENTRE_POINT) hint.classList.add('dimmed');
+          // Count a dot down exactly once. Relying on .done's
+          // pointer-events alone is how `remaining` could skip past zero
+          // and hang the step with no way forward.
+          if (hits >= CALIB_CLICKS && !dot.classList.contains('done')) {
+            dot.classList.add('done');
+            remaining -= 1;
+            showProgress();
+            if (remaining <= 0) { overlay.hidden = true; resolve(true); }
+          }
+        });
+        overlay.appendChild(dot);
+      });
+
+      $g('sg-calib-skip').addEventListener('click', () => {
+        overlay.hidden = true;
+        resolve(false);
+      }, { once: true });
+
+      hint.classList.remove('dimmed');
+      overlay.hidden = false;
+    });
+  }
+
+  // Cuts the camera itself. webgazer.end() stops its prediction loop but
+  // leaves the MediaStream open, so the camera light stays on while the
+  // participant is told tracking stopped. Only stopping the tracks
+  // actually releases the hardware.
+  function releaseCamera() {
+    let stopped = 0;
+    document.querySelectorAll('video').forEach(v => {
+      const stream = v.srcObject;
+      if (stream && stream.getTracks) {
+        stream.getTracks().forEach(t => { try { t.stop(); stopped += 1; } catch {} });
+      }
+      v.srcObject = null;
+    });
+    const box = document.getElementById('webgazerVideoContainer');
+    if (box) box.remove();
+    return stopped;
+  }
+
+  function endWebgazer() {
+    // Deliberately not awaited on its own terms: an end() that never
+    // settles used to block everything queued behind it.
+    Promise.race([
+      Promise.resolve().then(() => window.webgazer && webgazer.end()),
+      new Promise(r => setTimeout(r, 2000))
+    ]).catch(err => console.warn('Tracker did not shut down cleanly:', err));
+  }
+
+  function showNote(html, detail) {
+    const note = $g('sg-note');
+    if (!note) return;
+    note.innerHTML = html + '<code></code>';
+    note.querySelector('code').textContent = detail || '';
+    note.hidden = false;
+  }
+
+  // The single teardown path — the stop control, "I'm done", and any
+  // failure after tracking began. Idempotent, because more than one of
+  // those can fire.
+  async function stopTracking(reason) {
+    if (!gazeOn) return;
+    gazeOn = false;
+    $g('sg-stop').hidden = true;
+
+    // Every step is wrapped: an exception anywhere in here used to vanish
+    // into the caller's await, leaving the camera off, the record
+    // unwritten, and nothing to say which step failed.
+    const trace = [];
+
+    // Camera first, and synchronously. Nothing slow may stand between the
+    // participant asking and the light going out.
+    try { trace.push(`tracks:${releaseCamera()}`); }
+    catch (err) { trace.push('releaseCamera threw: ' + err.message); }
+    endWebgazer();
+
+    // Stopping is not a reason to discard what they already agreed to give.
+    try { closeFixation(); trace.push(`queued:${gazeBuffer.length}`); }
+    catch (err) { trace.push('closeFixation threw: ' + err.message); }
+    try { await flushGaze(); trace.push('flushed'); }
+    catch (err) { trace.push('flush threw: ' + err.message); }
+
+    // The session row was written long before this, so this is the one
+    // piece of state that has to be an update — via a function, not a
+    // direct update: an anon client cannot see the row it would update,
+    // so a plain update matches nothing and still reports success. The
+    // function returns rows changed, so "it worked" can be checked.
+    if (!window.supabaseClient) {
+      trace.push('no db client');
+    } else if (gazeState !== 'tracking') {
+      trace.push(`state was "${gazeState}", not "tracking" — nothing to update`);
+    } else {
+      const sid = sessionId, ready = sessionReady;
+      gazeState = 'stopped';
+      try {
+        await ready;
+        const { data, error } = await supabaseClient.rpc('stop_gaze', { sid });
+        trace.push(error ? `stop_gaze failed: ${error.message}`
+                         : (data === 1 ? 'recorded' : `no row changed (returned ${data})`));
+        if (error) console.error('could not record the stop', error);
+      } catch (err) {
+        trace.push('update threw: ' + err.message);
+        console.error('could not record the stop', err);
+      }
+    }
+
+    const detail = trace.join(' · ');
+    console.info(`Eye tracking stopped (${reason}): ${detail}`);
+    showNote('Eye tracking stopped. Your camera is off.', DEBUG ? detail : '');
+  }
+
+  // Resolves to the gaze_state to record. Never throws: eye tracking is
+  // an extra, and nothing it can do may stop the study from running.
+  async function setUpGaze() {
+    if (!gazeSupported()) return 'unsupported';
+
+    ensureGazeUi();
+    gazeOverlayUp = true;
+    try {
+      if (!await askOverlay('sg-consent', 'sg-allow', 'sg-decline')) return 'declined';
+
+      await loadScript(GAZE_LIB);
+
+      // Both must be set before begin(): the path is read when the face
+      // mesh is constructed. And another session's training data was
+      // fitted to a different face, at a different distance and light.
+      webgazer.params.faceMeshSolutionPath = FACE_MESH_PATH;
+      webgazer.params.saveDataAcrossSessions = false;
+
+      // begin() opens the camera, which is where a browser-level denial
+      // surfaces — caught below and recorded as 'blocked'.
+      await webgazer
+        .setRegression('ridge')
+        .setGazeListener(onGazeSample)
+        .showPredictionPoints(false)
+        .begin();
+
+      // WebGazer trains on every click anywhere on the page, into a ring
+      // buffer of 50. The framing button and anything else before the
+      // dots are clicks the participant was not necessarily looking at.
+      // Training is switched on only for the dots themselves.
+      try { webgazer.removeMouseEventListeners(); } catch {}
+
+      webgazer.showVideoPreview(true).showFaceOverlay(true).showFaceFeedbackBox(true);
+
+      if (!await askOverlay('sg-frame', 'sg-frame-ready', 'sg-frame-cancel')) {
+        releaseCamera();
+        endWebgazer();
+        return 'calibrating';
+      }
+
+      // The preview goes before the dots appear: it sits on top of the
+      // top-left dot, and a moving image pulls the eye at the one moment
+      // gaze has to be on a known point.
+      webgazer.showVideoPreview(false).showFaceOverlay(false).showFaceFeedbackBox(false);
+      try { webgazer.addMouseEventListeners(); } catch {}
+
+      if (!await runCalibration()) {
+        // The skip button said the camera turns off, so it has to.
+        releaseCamera();
+        endWebgazer();
+        return 'calibrating';
+      }
+
+      // Freeze the fit the moment calibration ends. With 45 calibration
+      // samples in a 50-slot buffer, the first study clicks would start
+      // overwriting the dots the participant carefully looked at — and a
+      // study click is a poor sample anyway: they may be looking anywhere.
+      try {
+        webgazer.removeMouseEventListeners();
+        // A count that grows after this means the detach did not take; one
+        // that holds while accuracy falls away means drift — opposite fixes.
+        window.__frozenAt = trainingSamples();
+      } catch (err) {
+        window.__frozenAt = 'detach failed';
+        console.warn('could not stop click training', err);
+      }
+
+      // In debug mode, show WebGazer's own prediction dot: stored
+      // fixations cannot tell a mirrored axis from a bad calibration from
+      // plain noise, and watching the raw estimate separates all three.
+      if (DEBUG) webgazer.showPredictionPoints(true);
+
+      gazeOn = true;
+      return 'tracking';
+    } catch (err) {
+      // Surfaced on screen, not just logged: silent for participants also
+      // made a setup failure impossible to tell apart from a "no".
+      console.warn('Eye tracking unavailable:', err);
+      window.__gazeError = err;
+      showNote('Eye tracking could not start. Everything else still works — this note is for setup only.',
+        [(err && err.name ? err.name + ': ' : '') + ((err && err.message) || String(err)),
+         ...String((err && err.stack) || '').split('\n').slice(0, 5)].join('\n'));
+      try { releaseCamera(); } catch {}
+      endWebgazer();
+      // Recorded apart because each calls for a different response: a
+      // blocked camera is a permission the participant can grant, a failed
+      // library is ours to fix, and a decline is neither.
+      const denied = err && ['NotAllowedError', 'SecurityError', 'NotFoundError', 'NotReadableError']
+        .includes(err.name);
+      return denied ? 'blocked' : 'unavailable';
+    } finally {
+      gazeOverlayUp = false;
+    }
+  }
+
+  // Everything that keeps a live tracker honest once the session exists:
+  // the stop control, the periodic flush, and sending what is buffered
+  // when the page goes away.
+  function startGazeUpkeep() {
+    $g('sg-stop').hidden = false;
+    setInterval(flushGaze, GAZE_FLUSH_MS);
+    // A closing tab kills in-flight requests, so send while the page is
+    // still alive. 'pagehide' fires where 'unload' is unreliable (bfcache,
+    // mobile Safari). The open fixation is finished here, unlike on the
+    // timer: the page is going, so the look is over.
+    const finish = () => { closeFixation(); flushGaze(); };
+    window.addEventListener('pagehide', finish);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') finish();
+    });
+
+    // Opt-in live readout. Whether clustering works is otherwise invisible
+    // until the run is over and the rows are queried.
+    if (DEBUG) {
+      showNote('Gaze debug', '');
+      setInterval(() => {
+        const code = document.querySelector('#sg-note code');
+        if (!code) return;
+        const g = window.__lastGaze;
+        code.textContent =
+          `${gazeSamples} raw · ${gazeSent} sent · ${gazeDropped} dropped · ${gazeBuffer.length} queued`
+          + ` · recording ${gazeWanted() ? 'yes' : 'no'}\n`
+          + (g ? `raw ${Math.round(g.x)},${Math.round(g.y)} of ${innerWidth}x${innerHeight}`
+                 + ` -> box ${g.cx.toFixed(2)},${g.cy.toFixed(2)}`
+               : 'no prediction yet')
+          + `\ntrained on ${trainingSamples()}`
+          + (window.__frozenAt != null ? ` · frozen at ${window.__frozenAt}` : '');
+      }, 500);
+    }
+  }
 
   // ------------------------------------------------------------------
   // Set-up. Called once, by the app, before anything else here is used.
@@ -994,6 +1804,8 @@ window.Study = (function () {
     get taskIndex() { return taskIndex; },
     get routeRetry(){ return routeRetry; },
     get routeAttempts() { return routeAttempts; },
+    get gazeState() { return gazeState; },
+    get gazeOn()    { return gazeOn; },
 
     // Read as properties rather than copied at import time: begin() swaps
     // the session id, and a destructured copy would keep writing rows

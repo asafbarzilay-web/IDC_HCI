@@ -565,9 +565,6 @@
                 : t.closest('.clickable')         ? 'option'
                 : t.closest('input, textarea')    ? 'option'
                 : 'none',
-    taskId: () => null,
-    gazeState: () => null,
-    studyMode: () => Study.studyMode,
 
     slots: {
       progress: () => document.getElementById('progress-rail'),
@@ -578,11 +575,14 @@
     // handed "book a walk with a verified walker" should begin — unless
     // the task named a later entry step (e.g. 'chat'), so a task about
     // messaging a walker isn't forced through onboarding and booking it
-    // never asked about. Every OTHER piece of state still resets to its
-    // default regardless of the entry step, so a screen that depends on
-    // prior state (book, checkout, live, recap, rate) renders against a
-    // generic walker/date/time rather than nothing at all.
-    resetApp: (entryStep) => {
+    // never asked about.
+    //
+    // Everything resets to its default first, then the author's snapshot
+    // from that step (if the task has one) is laid over it. That is what
+    // makes a task starting at checkout show the walker, day, time and
+    // dog the author picked on the way, rather than walker #1 at 16:00.
+    // Tasks saved before snapshots existed have none and get the defaults.
+    resetApp: (entryStep, entryState) => {
       screen = SCREENS.includes(entryStep) ? entryStep : 'welcome';
       view = 'list'; query = '';
       filters = { instant: false, under80: false, verified: false, large: false };
@@ -592,6 +592,7 @@
       payMethod = 'card'; promo = ''; promoOk = false;
       tip = 20; rating = 0; tags = []; reviewText = '';
       chatWalkerId = 1; extraMsgs = []; progress = 22;
+      if (entryState && screen !== 'welcome') restoreState(entryState);
       stopLiveTimer();
       if (screen === 'live') startLiveTimer();
       stepEnteredAt = Date.now();
@@ -605,6 +606,18 @@
       document.getElementById('header').hidden = inQuestionMode || ONBOARDING.has(screen);
     },
 
+    // Everything a screen can depend on, minus the screen itself. Sent to
+    // the dashboard with each choice while authoring; restored by
+    // resetApp() when a task starts partway in.
+    snapshot: () => ({
+      view, query, filters: { ...filters }, sortKey, walkerId,
+      dogName, dogBreed, dogSize, dogTraits: dogTraits.slice(), dogNotes,
+      bDate, bTime, bDur, bDogIdx, bNotes,
+      payMethod, promo, promoOk,
+      tip, rating, tags: tags.slice(), reviewText,
+      chatWalkerId, extraMsgs: extraMsgs.slice(), progress
+    }),
+
     // Deliberately false: the header nav reaches any authed screen from
     // any other, so there is no moment an attempt has run out of road.
     attemptExhausted: () => false,
@@ -613,6 +626,31 @@
     // Nothing to shut down: this app never opens a camera or mic.
     onFinish: async () => 'Thanks'
   });
+
+  // Lays a snapshot over the defaults. Only keys the snapshot actually
+  // carries are applied, and only with the type the default has — a
+  // snapshot from an older version of this app, missing a field or
+  // holding one renamed since, falls back to the default for it rather
+  // than poisoning the screen with undefined.
+  function restoreState(s) {
+    const pick = (k, cur) => (s[k] !== undefined && s[k] !== null
+      && typeof s[k] === typeof cur && Array.isArray(s[k]) === Array.isArray(cur)) ? s[k] : cur;
+    view = pick('view', view); query = pick('query', query);
+    filters = { ...filters, ...(pick('filters', filters)) };
+    sortKey = pick('sortKey', sortKey);
+    walkerId = WALKERS.some(w => w.id === s.walkerId) ? s.walkerId : walkerId;
+    dogName = pick('dogName', dogName); dogBreed = pick('dogBreed', dogBreed);
+    dogSize = pick('dogSize', dogSize); dogTraits = pick('dogTraits', dogTraits);
+    dogNotes = pick('dogNotes', dogNotes);
+    bDate = pick('bDate', bDate); bTime = pick('bTime', bTime); bDur = pick('bDur', bDur);
+    bDogIdx = pick('bDogIdx', bDogIdx); bNotes = pick('bNotes', bNotes);
+    payMethod = pick('payMethod', payMethod); promo = pick('promo', promo);
+    promoOk = pick('promoOk', promoOk);
+    tip = pick('tip', tip); rating = pick('rating', rating); tags = pick('tags', tags);
+    reviewText = pick('reviewText', reviewText);
+    chatWalkerId = WALKERS.some(w => w.id === s.chatWalkerId) ? s.chatWalkerId : chatWalkerId;
+    extraMsgs = pick('extraMsgs', extraMsgs); progress = pick('progress', progress);
+  }
 
   const PREVIEW = Study.PREVIEW_MODE ? Study.PREVIEW_STEP : null;
   const TRACKING_OFF = Study.TRACKING_OFF;

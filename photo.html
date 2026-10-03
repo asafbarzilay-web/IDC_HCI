@@ -4,34 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>photo</title>
-<script>
-(function (m, a, z, e) {
-  var s, t, u, v;
-  try {
-    t = m.sessionStorage.getItem('maze-us');
-  } catch (err) {}
-
-  if (!t) {
-    t = new Date().getTime();
-    try {
-      m.sessionStorage.setItem('maze-us', t);
-    } catch (err) {}
-  }
-
-  u = document.currentScript || (function () {
-    var w = document.getElementsByTagName('script');
-    return w[w.length - 1];
-  })();
-  v = u && u.nonce;
-
-  s = a.createElement('script');
-  s.src = z + '?apiKey=' + e;
-  s.async = true;
-  if (v) s.setAttribute('nonce', v);
-  a.getElementsByTagName('head')[0].appendChild(s);
-  m.mazeUniversalSnippetApiKey = e;
-})(window, document, 'https://snippet.maze.co/maze-universal-loader.js', '06eca3e4-f5c6-42ce-a5ba-7e0d181db304');
-</script>
 
 <!--
   The photo app: the second participant-facing study in this repo, built
@@ -679,9 +651,6 @@
                 : t.closest('input, textarea')       ? 'option'
                 : t.closest('.btn')                  ? 'option'
                 : 'none',
-    taskId: () => null,
-    gazeState: () => null,
-    studyMode: () => Study.studyMode,
 
     // ---- the task battery ------------------------------------------
     slots: {
@@ -695,11 +664,20 @@
     // handed "find the surfing dog" should begin — unless the task named
     // a later entry step (e.g. 'chats'), so a task about messaging isn't
     // forced through the login screens it never asked about.
-    resetApp: (entryStep) => {
+    //
+    // A screen partway in can depend on what led there — which person the
+    // conversation is with, what was searched for — so the author's
+    // snapshot from that step is restored over the defaults when the task
+    // has one. Tasks saved before snapshots existed get the defaults.
+    resetApp: (entryStep, entryState) => {
       screen = SCREENS.includes(entryStep) ? entryStep : 'logged_out';
       overlay = null;
       chatWith = null;
       searchText = '';
+      if (entryState && screen !== 'logged_out') {
+        if (typeof entryState.chatWith === 'string') chatWith = entryState.chatWith;
+        if (typeof entryState.searchText === 'string') searchText = entryState.searchText;
+      }
       stepEnteredAt = Date.now();
       render();
     },
@@ -713,6 +691,11 @@
       document.getElementById('navbar').hidden = inQuestionMode || !NAV_TITLE[screen];
       document.getElementById('overlay').hidden = inQuestionMode || !overlay;
     },
+
+    // What a screen can depend on, minus the screen itself. An open
+    // overlay is left out on purpose: it is a layer the participant opens,
+    // not somewhere a task should start inside.
+    snapshot: () => ({ chatWith, searchText }),
 
     // Deliberately false. This app's screens are a graph — the tab bar
     // reaches anything from anywhere — so there is no moment at which an
