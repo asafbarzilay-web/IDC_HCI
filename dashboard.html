@@ -2730,11 +2730,10 @@
     return list;
   };
 
-  // Only sessions that actually answered something: offering a picker full
-  // of people who never reached a task is a list you have to read to learn
-  // is useless.
+  // The same sessions every number on these tabs counts — those given
+  // tasks (see wasTasked) — so "All sessions (N)" and "N sessions" agree.
+  // Free-style-only sessions are already gone from taskSessions.
   const taskSessionOptions = () => taskSessions
-    .filter(s => (s.task_responses || []).length)
     .map((s, i) => ({
       value: s.session_id,
       label: `#${i + 1} · ${s.session_id.slice(0, 8)} · ${(s.task_responses || []).length} answers`
@@ -2829,7 +2828,7 @@
     if (taskFilter.from === null) taskFilter.from = defaultTaskFrom();
     let q = supabaseClient
       .from('sessions')
-      .select('session_id, user_id, platform, started_at,'
+      .select('session_id, user_id, platform, started_at, study_mode,'
             + ' task_responses(task_id, kind, answer, duration_ms, created_at),'
             + ' selections(step, value, duration_ms, created_at, task_id),'
             + ' clicks(step, x, y, seq, hit, task_id),'
@@ -2851,7 +2850,22 @@
       selections: s.selections || [],
       clicks: s.clicks || [],
       gaze: (s.gaze || []).slice().sort((a, b) => a.t_ms - b.t_ms)
-    }));
+    })).filter(wasTasked);
+  }
+
+  // Task results and the Summary describe people who were given tasks.
+  // A free-style session that never pressed "Start the tasks" belongs to
+  // Free style alone: counted here it inflated "19 sessions", deflated
+  // "worked through tasks" to 5%, and was reported as a cold start when it
+  // never started anything. Given tasks means: answered one, did anything
+  // stamped with a task, or ran under "Tasks only", where the battery
+  // starts on arrival — so someone who quit before a first answer still
+  // counts, as someone who did not get through.
+  function wasTasked(s) {
+    return s.task_responses.length > 0
+      || s.selections.some(x => x.task_id)
+      || s.clicks.some(x => x.task_id)
+      || s.study_mode === 'tasks';
   }
 
   // What the participant was actually asked, restated above the numbers.
@@ -3652,7 +3666,9 @@
   // Everything below the filter bar. Split out so a filter change can
   // rebuild the report without touching the bar that triggered it.
   function summaryReportMarkup() {
-    const sessions = taskSessions;
+    // The filtered cohort, so the Sessions and Warm-up filters above the
+    // report narrow its headline numbers too, not only the task cards.
+    const sessions = taskCohort();
     const ordered = orderedTasks();
 
     const window_ = taskFilter.from || taskFilter.to
@@ -3676,9 +3692,9 @@
 
     return `
       <div class="summary-head">
-        <h1>Selector Flow — study summary</h1>
+        <h1>${APPS[currentApp].label} — study summary</h1>
         <div class="summary-sub">
-          ${window_} · ${sessions.length} sessions · ${answered} worked through tasks
+          ${window_} · ${sessions.length} session${sessions.length === 1 ? '' : 's'} given tasks · ${answered} answered at least one
           · generated ${new Date().toLocaleString()}
         </div>
       </div>
@@ -3687,11 +3703,11 @@
         <h3>Overall</h3>
         <div class="tr-grid">
           <div>
-            ${trBar('Worked through tasks', answered, sessions.length)}
+            ${trBar('Answered at least one task', answered, sessions.length)}
             ${trBar('Gave up on at least one', gaveUp, sessions.length)}
           </div>
           <div class="tr-side">
-            ${trMetric('Sessions', sessions.length, window_)}
+            ${trMetric('Sessions given tasks', sessions.length, window_)}
             ${trMetric('Unique people', new Set(sessions.map(s => s.user_id)).size, '')}
           </div>
         </div>
