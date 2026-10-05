@@ -881,6 +881,8 @@
     border: 1px solid #D8D3C6; border-radius: 7px; background: #fff; color: #29261F;
   }
   .stage-copy:hover { border-color: #C15F3C; }
+  .stage-copies { display: flex; flex-direction: column; gap: 6px; align-items: stretch; flex: none; }
+  .stage-copy.quiet { background: none; color: #8A8578; }
   .stage-done { align-items: start; }
   .stage-done .stage-dot { background: #29261F; border: none; margin-top: 4px; }
   .stage-done-text { font-family: Newsreader, Georgia, serif; font-size: 17px; color: #6B665A; }
@@ -1751,7 +1753,13 @@
               <span class="stage-title">Opens the link</span>
               <code class="stage-url" id="app-link">index.html</code>
             </div>
-            <button type="button" class="stage-copy" id="copy-link">Copy link</button>
+            <div class="stage-copies">
+              <button type="button" class="stage-copy" id="copy-link">Copy link</button>
+              <!-- For you, not participants: skips the "already took part"
+                   check and is left out of every result. -->
+              <button type="button" class="stage-copy quiet" id="copy-test-link"
+                title="Lets you take the battery as often as you like. Runs from it are marked as tests and left out of the results.">Copy test link</button>
+            </div>
           </div>
         </div>
 
@@ -2836,6 +2844,8 @@
       // Scoped to one study: without this the two apps' runs arrive as one
       // cohort and every average below is computed across both.
       .eq('app', currentApp)
+      // Runs from the test link are the author trying the study, not data.
+      .eq('is_test', false)
       .order('started_at', { ascending: false })
       .limit(5000);
     if (taskFilter.from) q = q.gte('started_at', `${taskFilter.from}T00:00:00.000Z`);
@@ -3122,14 +3132,16 @@
   document.getElementById('sw-tasks').addEventListener('click', () =>
     setMode(tasksOn() && !freeOn() ? 'free' : modeOf(freeOn(), !tasksOn())));
 
-  document.getElementById('copy-link').addEventListener('click', async (e) => {
+  const copyButton = (id, label, url) => document.getElementById(id).addEventListener('click', async (e) => {
     const btn = e.currentTarget;
-    try { await navigator.clipboard.writeText(document.getElementById('app-link').textContent); }
+    try { await navigator.clipboard.writeText(url()); }
     catch { return; }
     btn.textContent = 'Copied';
     clearTimeout(btn._t);
-    btn._t = setTimeout(() => { btn.textContent = 'Copy link'; }, 1400);
+    btn._t = setTimeout(() => { btn.textContent = label; }, 1400);
   });
+  copyButton('copy-link', 'Copy link', () => document.getElementById('app-link').textContent);
+  copyButton('copy-test-link', 'Copy test link', () => document.getElementById('app-link').textContent + '?retake=1');
 
   async function setMode(wanted) {
     if (wanted === studyMode) return;
@@ -3942,6 +3954,8 @@
       .order('started_at', { ascending: false })
       // Scoped to one study, for the same reason as the task cohort above.
       .eq('app', currentApp)
+      // Runs from the test link are the author trying the study, not data.
+      .eq('is_test', false)
       .limit(5000);
 
     if (fromVal) query = query.gte('started_at', `${fromVal}T00:00:00.000Z`);

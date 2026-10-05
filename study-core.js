@@ -42,6 +42,10 @@ window.Study = (function () {
   const AUTHOR_MODE      = params.get('authorMode') === '1';
   const QUESTION_PREVIEW = params.get('previewQuestion') === '1';
   const DEBUG            = params.get('debug') === '1';
+  // The author's test link. Skips the "already took part" check, so the
+  // battery can be tried as often as needed, and marks the session as a
+  // test so the dashboard leaves it out of the results.
+  const RETAKE           = params.get('retake') === '1';
 
   // What a preview should show besides the screen id. A screen partway
   // into a flow depends on what led there — Shvil's walker page is one of
@@ -198,7 +202,10 @@ window.Study = (function () {
         platform,
         is_restart: isRestart,
         gaze_state: gazeState,
-        study_mode: studyMode
+        study_mode: studyMode,
+        // Sent only when true, so ordinary sessions still insert against a
+        // database that has not had the is_test column added yet.
+        ...(RETAKE ? { is_test: true } : {})
       })
       .then(({ error }) => { if (error) console.error('startSession failed', error); })
       .catch(err => console.error('startSession failed', err));
@@ -1200,6 +1207,7 @@ window.Study = (function () {
         + '<div class="progress-label" id="progress-label">Complete</div>';
     }
     taskIndex = battery.length;   // out of range: inBattery() is false again
+    markCompleted(batteryKey);
     cfg.chrome('done');
     const host = slot('question');
     if (!host) return;
@@ -1303,6 +1311,21 @@ window.Study = (function () {
     const settings = await loadSettings();
     studyMode = settings.mode;
     battery = studyMode === 'free' ? [] : await loadBattery();
+
+    // Once per battery, per browser. Someone who has finished this exact
+    // set of tasks and opens the link again would bring what they learned
+    // the first time into the second — faster, more direct, and averaged
+    // in as if it were a first attempt. In "Tasks only" they get a closing
+    // screen and nothing is recorded; in "Free style, then tasks" they may
+    // still explore, but are not offered the tasks again.
+    batteryKey = batteryKeyOf(battery);
+    if (batteryKey && !RETAKE && completedBefore(batteryKey)) {
+      if (studyMode === 'tasks') {
+        showAlreadyTookPart();
+        return { started: false, offer: false, alreadyTookPart: true };
+      }
+      battery = [];
+    }
 
     // One switch per app, all or nothing: free exploration and every
     // in-app task. Asked for only when this participant will meet at least
@@ -1526,6 +1549,41 @@ window.Study = (function () {
       setTimeout(() => el.remove(), 180);
       onGo();
     }, { once: true });
+  }
+
+  // ------------------------------------------------------------------
+  // Once per battery
+  //
+  // A battery is the exact set of active tasks. Adding, removing,
+  // activating or deactivating one makes a new battery that earlier
+  // participants may take; reordering the same tasks does not. Kept in
+  // this browser's storage — a private window or another device is a new
+  // participant as far as this can tell, which is why it is a courtesy,
+  // not a guarantee.
+  // ------------------------------------------------------------------
+  let batteryKey = null;
+  const batteryKeyOf = (list) => list.length
+    ? `idc_hci_done:${cfg.app}:${list.map(t => t.task_id).sort().join(',')}` : null;
+  function completedBefore(key) {
+    try { return !!localStorage.getItem(key); } catch { return false; }
+  }
+  function markCompleted(key) {
+    if (!key || TRACKING_OFF) return;
+    try { localStorage.setItem(key, new Date().toISOString()); } catch {}
+  }
+  function showAlreadyTookPart() {
+    ensureTransitionCss();
+    const el = document.createElement('div');
+    el.className = 'st-overlay screen';
+    el.setAttribute('role', 'dialog');
+    el.innerHTML = `<div class="st-card">
+      <div class="st-badge soft">${CHECK_SVG}</div>
+      <h1>You've already taken part</h1>
+      <p class="st-sub">Thank you — you've completed this study, so there's nothing more to do. You can close this page.</p>
+    </div>`;
+    document.body.appendChild(el);
+    // Nothing behind it may be clicked or recorded: no session was opened.
+    transitionUp = true;
   }
 
   // The state a preview should be drawn with, or null for the defaults.
