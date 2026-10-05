@@ -692,6 +692,10 @@
       document.getElementById('tabbar').hidden = inQuestionMode || !TABBED.has(screen);
       document.getElementById('navbar').hidden = inQuestionMode || !NAV_TITLE[screen];
       document.getElementById('overlay').hidden = inQuestionMode || !overlay;
+      // The task bar describes the current task. A question renders into
+      // the phone without redrawing it, so it kept showing the previous
+      // route task — with a "move on" link that would give up a question.
+      renderPrompt();
     },
 
     // What a screen can depend on, minus the screen itself. An open

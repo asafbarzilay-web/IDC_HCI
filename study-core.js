@@ -232,7 +232,7 @@ window.Study = (function () {
       // over the app while the current screen still reads as the first one,
       // so without this guard a run of calibration clicks lands in that
       // screen's heatmap and every one of them scores as a mis-click.
-      if (gazeOverlayUp || cfg.overlayActive()) return;
+      if (gazeOverlayUp || transitionUp || cfg.overlayActive()) return;
 
       // Question screens are not the app. Their clicks were being written
       // as clicks on the first step, every one scoring as a mis-click
@@ -721,26 +721,37 @@ window.Study = (function () {
     renderBatteryProgress();
 
     if (t.kind === 'app_route') {
-      // Each route task is its own fresh attempt at the app.
-      routeAttempt = [];
-      routeAttempts = 1;
-      routeRetry = false;
-      answers = {};
-      resetClickSeq();
-      cfg.chrome('app');
-      // A task can name where it begins — the demonstrated step marked as
-      // the start — so a participant is not forced through screens the
-      // task deliberately isn't testing (login, to reach chat). Steps
-      // before that entry point were never bound (see the dashboard's
-      // authoring UI), so scoring is unaffected either way. The state the
-      // author had built up by that step comes with it, so the screen is
-      // the one they demonstrated rather than one filled with defaults.
-      cfg.resetApp(t.entry_step || null, t.entry_state || null);
+      // Every route task starts on its own pre-screen: what to do and how
+      // it works, then a Start button. The app is reset, and the clock
+      // started, only once they press it.
+      showPreScreen(t, () => startRoute(t));
       return;
     }
 
     cfg.chrome('question');
     renderQuestion(t);
+  }
+
+  // The moment a route task actually begins. Its clock starts here, after
+  // the participant has read the goal and chosen to start, so the time
+  // spent reading the card is not counted as time spent on the task.
+  function startRoute(t) {
+    taskStartedAt = Date.now();
+    // Each route task is its own fresh attempt at the app.
+    routeAttempt = [];
+    routeAttempts = 1;
+    routeRetry = false;
+    answers = {};
+    resetClickSeq();
+    cfg.chrome('app');
+    // A task can name where it begins — the demonstrated step marked as
+    // the start — so a participant is not forced through screens the
+    // task deliberately isn't testing (login, to reach chat). Steps
+    // before that entry point were never bound (see the dashboard's
+    // authoring UI), so scoring is unaffected either way. The state the
+    // author had built up by that step comes with it, so the screen is
+    // the one they demonstrated rather than one filled with defaults.
+    cfg.resetApp(t.entry_step || null, t.entry_state || null);
   }
 
   // --- question rendering ------------------------------------------------
@@ -816,7 +827,14 @@ window.Study = (function () {
       completed: how === 'reached',
       outcome: how === 'gave_up' ? 'gave_up' : (firstTime ? 'direct' : 'indirect')
     });
-    nextTask();
+
+    // Reaching the goal used to swap the app for the next thing without a
+    // word, and participants could not tell they had succeeded. Now the
+    // result gets a screen of its own, about that task only, and they click
+    // on from it. After the last task "All done" says it instead — two
+    // closing screens in a row would be one too many.
+    if (!battery[taskIndex + 1]) { nextTask(); return; }
+    showResultScreen(how, nextTask);
   }
   // Sampling always keeps both extremes and never repeats up to 11 steps.
   const FACE_RAMP = ['😩', '😖', '😟', '🙁', '😕', '😐', '🙂', '😊', '😄', '😁', '🤩'];
@@ -1319,7 +1337,196 @@ window.Study = (function () {
     nextTask();
   }
 
-  function giveUp() { finishRouteTask('gave_up'); }
+  // Only a route task can be given up. A stale "move on" link left on
+  // screen during a question must not record one against the question.
+  function giveUp() {
+    const t = currentTask();
+    if (t && t.kind === 'app_route') finishRouteTask('gave_up');
+  }
+
+  // ------------------------------------------------------------------
+  // Between tasks
+  //
+  // Two screens, each about one thing, the same in every app and drawn
+  // over the app so no app's layout has to make room for them:
+  //   result     — after a route task: celebrates it, or acknowledges a
+  //                skip. About that task only.
+  //   pre-screen — before a route task: what to do and how it works.
+  //                About the next task only.
+  // Between two route tasks a participant sees both, in that order. Both
+  // wait for a click: advancing on its own is what made the switch
+  // between tasks impossible to notice. A first version put the result on
+  // the next screen as a strip, and one screen talking about two tasks
+  // read as one confusing message.
+  // ------------------------------------------------------------------
+  let transitionUp = false;
+
+  const TRANSITION_CSS = `
+  .st-overlay {
+    position: fixed; inset: 0; z-index: 2147481000;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    background: color-mix(in srgb, var(--task-ink) 38%, transparent);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    animation: stFade 0.2s ease both;
+  }
+  .st-overlay.leaving { animation: stFadeOut 0.18s ease both; }
+  /* The pre-screen is a screen, not a pop-up: the app is not visible
+     behind it until the task actually starts. */
+  .st-overlay.screen { background: var(--task-surface); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .st-overlay.screen .st-card { max-width: 520px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08); border: 1px solid var(--task-line); }
+  .st-badge {
+    position: relative; width: 84px; height: 84px; margin: 4px auto 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--task-accent); color: var(--task-surface-hi);
+    animation: stPop 0.55s 0.1s cubic-bezier(0.2, 0.8, 0.3, 1.4) both;
+  }
+  .st-badge.soft { background: var(--task-accent-soft); color: var(--task-accent); }
+  .st-badge svg path { stroke-dasharray: 30; stroke-dashoffset: 30; animation: stDraw 0.4s 0.4s ease forwards; }
+  .st-badge .st-confetti { top: 50%; }
+  .st-sub { margin: 0; font-size: 16px; line-height: 1.55; color: var(--task-ink-2); }
+  .st-count { margin: 10px 0 0; font-size: 12px; color: var(--task-muted); }
+  .st-dots span.now { animation: stFill 0.6s 0.35s ease both; }
+  .st-how {
+    margin: 20px 0 0; padding: 0; list-style: none; text-align: left;
+    border-top: 1px solid var(--task-line);
+  }
+  .st-how li {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 12px 2px; border-bottom: 1px solid var(--task-line);
+    font-size: 14px; line-height: 1.5; color: var(--task-ink-2);
+  }
+  .st-how li b { color: var(--task-ink); font-weight: 600; }
+  .st-how .ic { flex: none; width: 20px; text-align: center; color: var(--task-accent); font-size: 15px; line-height: 1.4; }
+  .st-card {
+    position: relative; box-sizing: border-box;
+    width: 100%; max-width: 440px; padding: 36px 32px 30px;
+    background: var(--task-surface-hi); color: var(--task-ink);
+    border-radius: 22px; text-align: center;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+    animation: stRise 0.35s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+  .st-eyebrow {
+    margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--task-accent);
+  }
+  /* No font-family: the title takes each app's own h1 face. */
+  .st-card h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; color: var(--task-ink); }
+  .st-dots { display: flex; justify-content: center; gap: 6px; margin: 18px 0 0; }
+  .st-dots span { width: 22px; height: 5px; border-radius: 3px; background: var(--task-line); }
+  .st-dots span.done { background: var(--task-accent); }
+  .st-go {
+    margin-top: 24px; width: 100%;
+    font: inherit; font-size: 16px; font-weight: 600;
+    background: var(--task-accent); color: var(--task-surface-hi);
+    border: none; border-radius: 14px; padding: 15px 22px; cursor: pointer;
+    transition: filter 0.15s ease, transform 0.15s ease;
+  }
+  .st-go:hover { filter: brightness(0.92); }
+  .st-go:active { transform: scale(0.98); }
+  .st-go:focus-visible { outline: 2px solid var(--task-accent); outline-offset: 3px; }
+  /* A small burst from the badge on success only. */
+  .st-confetti { position: absolute; left: 50%; width: 0; height: 0; pointer-events: none; }
+  .st-confetti i {
+    position: absolute; width: 7px; height: 11px; border-radius: 2px; opacity: 0;
+    animation: stBurst 0.9s 0.15s cubic-bezier(0.1, 0.7, 0.3, 1) forwards;
+  }
+  @keyframes stFade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes stFadeOut { to { opacity: 0; } }
+  @keyframes stRise { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
+  @keyframes stPop { from { transform: scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes stDraw { to { stroke-dashoffset: 0; } }
+  @keyframes stFill { from { background: var(--task-line); } to { background: var(--task-accent); } }
+  @keyframes stBurst {
+    0% { opacity: 1; transform: translate(0, 0) rotate(0); }
+    100% { opacity: 0; transform: translate(var(--x), var(--y)) rotate(var(--r)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .st-overlay, .st-card, .st-badge, .st-badge svg path, .st-dots span.now { animation: none; }
+    .st-badge svg path { stroke-dashoffset: 0; }
+    .st-confetti { display: none; }
+  }`;
+
+  let transitionCssIn = false;
+
+  function confetti() {
+    const colours = ['var(--task-accent)', 'var(--task-accent-hover)', 'var(--task-accent-line)', 'var(--task-ink-3)'];
+    let out = '';
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2;
+      const d = 90 + (i % 3) * 30;
+      out += `<i style="--x:${Math.round(Math.cos(a) * d)}px;--y:${Math.round(Math.sin(a) * d - 20)}px;`
+        + `--r:${(i * 47) % 360}deg;background:${colours[i % colours.length]}"></i>`;
+    }
+    return `<div class="st-confetti" aria-hidden="true">${out}</div>`;
+  }
+
+  function ensureTransitionCss() {
+    if (transitionCssIn) return;
+    transitionCssIn = true;
+    const st = document.createElement('style');
+    st.id = 'study-transition-css';
+    st.textContent = TRANSITION_CSS;
+    document.head.insertBefore(st, document.head.firstChild);
+  }
+
+  const CHECK_SVG = '<svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+  const ARROW_SVG = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+
+  // The task just finished: celebrated, or a skip acknowledged without
+  // fuss. Nothing here about what comes next.
+  function showResultScreen(how, onGo) {
+    const done = taskIndex + 1;
+    const dots = battery.map((_, i) =>
+      `<span class="${i < done ? 'done' : ''}${i === done - 1 && how === 'reached' ? ' now' : ''}"></span>`).join('');
+    const body = how === 'reached'
+      ? `<div class="st-badge">${confetti()}${CHECK_SVG}</div>
+         <h1>Task complete!</h1>
+         <p class="st-sub">Nice work — you did it.</p>`
+      : `<div class="st-badge soft">${ARROW_SVG}</div>
+         <h1>No problem</h1>
+         <p class="st-sub">That one was tricky. We've moved on.</p>`;
+    mountScreen(`${body}
+      <div class="st-dots">${dots}</div>
+      <p class="st-count">${done} of ${battery.length} done</p>
+      <button class="st-go" type="button">Continue →</button>`, onGo);
+  }
+
+  // The task about to start: what to do, and how these tasks behave — the
+  // app never says "correct", so they need to know that moving on is the
+  // sign, and that there is a way out if they are stuck.
+  function showPreScreen(task, onGo) {
+    const dots = battery.map((_, i) => `<span class="${i < taskIndex ? 'done' : ''}"></span>`).join('');
+    mountScreen(`
+      <p class="st-eyebrow">Task ${taskIndex + 1} of ${battery.length}</p>
+      <h1>${escapeHtml(task.goal_text)}</h1>
+      <ul class="st-how">
+        <li><span class="ic">◎</span><span><b>Use the app</b> to do this, the way you normally would.</span></li>
+        <li><span class="ic">→</span><span><b>You'll move on automatically</b> as soon as it's done. There's no need to tell us.</span></li>
+        <li><span class="ic">⤼</span><span><b>Stuck?</b> You can skip it at any time — the task stays on screen with a "move on" link.</span></li>
+      </ul>
+      <div class="st-dots">${dots}</div>
+      <button class="st-go" type="button">Start task →</button>`, onGo);
+  }
+
+  function mountScreen(inner, onGo) {
+    ensureTransitionCss();
+    const el = document.createElement('div');
+    el.className = 'st-overlay screen';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.innerHTML = `<div class="st-card">${inner}</div>`;
+    document.body.appendChild(el);
+    transitionUp = true;
+    const go = el.querySelector('.st-go');
+    // Focused, so Enter or Space moves on too.
+    setTimeout(() => { try { go.focus({ preventScroll: true }); } catch {} }, 60);
+    go.addEventListener('click', () => {
+      transitionUp = false;
+      el.classList.add('leaving');
+      setTimeout(() => el.remove(), 180);
+      onGo();
+    }, { once: true });
+  }
 
   // The state a preview should be drawn with, or null for the defaults.
   function previewState() {
@@ -1539,7 +1746,7 @@ window.Study = (function () {
     // A question is not the app, and a context that did not ask for gaze
     // is not recorded — the camera stays on between gaze tasks rather
     // than asking twice, but nothing outside them is written.
-    if (!step || !onAppScreen() || gazeOverlayUp || !gazeWanted()) {
+    if (!step || !onAppScreen() || gazeOverlayUp || transitionUp || !gazeWanted()) {
       closeFixation();
       return;
     }

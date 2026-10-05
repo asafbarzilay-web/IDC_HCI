@@ -604,6 +604,10 @@
     chrome: (mode) => {
       inQuestionMode = mode !== 'app';
       document.getElementById('header').hidden = inQuestionMode || ONBOARDING.has(screen);
+      // The task bar describes the current task. A question renders into
+      // the body without redrawing it, so it kept showing the previous
+      // route task — with a "move on" link that would give up a question.
+      renderPrompt();
     },
 
     // Everything a screen can depend on, minus the screen itself. Sent to
