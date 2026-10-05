@@ -256,6 +256,10 @@
   .start-tasks[hidden] { display: none; }
   .start-tasks:hover { background: #A94E2E; }
 
+  /* The selector's column already sets the question's measure and
+     margins, so the core's own padding around it is switched off. */
+  :root { --task-q-pad: 0; }
+
   /* The task banner and all six question types are styled by
      study-core.js, which injects them on configure. Its palette variables
      default to this app's colours, so nothing needs restating here and it

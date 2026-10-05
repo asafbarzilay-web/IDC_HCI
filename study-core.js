@@ -313,7 +313,257 @@ window.Study = (function () {
   // by asking for them rather than by copying 170 lines of CSS. Colours are
   // variables with the shapes app's palette as the default, so that app
   // looks exactly as it did and any other app can restate them.
-  const TASK_CSS = ":root {\n  --task-accent: #C15F3C;\n  --task-accent-hover: #C9A491;\n  --task-accent-soft: #F6E9E1;\n  --task-accent-line: #E4CDBE;\n  --task-warn: #A94E2E;\n  --task-surface: #FAF9F5;\n  --task-surface-hi: #FFFFFF;\n  --task-line: #E0DBCE;\n  --task-line-soft: #D8D3C6;\n  --task-ink: #29261F;\n  --task-ink-2: #5C574C;\n  --task-ink-3: #6B665A;\n  --task-muted: #8A8578;\n  --task-muted-2: #8A7C6A;\n}\n  /* ---- Task battery ---------------------------------------------- */\n  .task-banner {\n    background: var(--task-accent-soft);\n    border: 1px solid var(--task-accent-line);\n    border-radius: 12px;\n    padding: 14px 18px;\n    margin-bottom: 28px;\n    animation: flowIn 0.4s ease both;\n  }\n  .task-banner .eyebrow { margin-bottom: 4px; }\n  .task-banner p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--task-ink); }\n\n\n  .task-banner-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }\n  /* Always on screen during a route task. A task that only ends on success\n     needs a way out, or someone who cannot find it is simply stuck. */\n  .task-giveup {\n    font: inherit;\n    font-size: 12px;\n    color: var(--task-muted-2);\n    background: none;\n    border: none;\n    padding: 0;\n    cursor: pointer;\n    text-decoration: underline;\n    white-space: nowrap;\n  }\n  .task-giveup:hover { color: var(--task-warn); }\n\n  .task-retry {\n    margin-top: 12px;\n    padding-top: 12px;\n    border-top: 1px solid var(--task-accent-line);\n    font-size: 14px;\n    color: var(--task-warn);\n  }\n\n  .q-block { animation: flowIn 0.4s ease both; }\n  .q-block h1 {\n    font-family: 'Newsreader', Georgia, serif;\n    font-size: 30px;\n    font-weight: 500;\n    margin: 0 0 10px;\n    letter-spacing: -0.01em;\n  }\n  .q-block .q-desc { margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: var(--task-ink-2); }\n\n  .q-options { display: flex; flex-direction: column; gap: 10px; }\n  .q-option {\n    display: flex;\n    align-items: center;\n    gap: 12px;\n    text-align: left;\n    font: inherit;\n    font-size: 16px;\n    background: var(--task-surface);\n    border: 1px solid var(--task-line);\n    border-radius: 12px;\n    padding: 15px 18px;\n    cursor: pointer;\n    transition: all 0.15s ease;\n    color: var(--task-ink);\n  }\n  .q-option:hover { border-color: var(--task-accent-hover); }\n  .q-option.on { border-color: var(--task-accent); background: var(--task-accent-soft); }\n  .q-option .mark {\n    width: 19px; height: 19px; flex: none;\n    border: 1.5px solid var(--task-accent-hover);\n    background: var(--task-surface-hi);\n  }\n  .q-option .mark.radio { border-radius: 50%; }\n  .q-option .mark.box   { border-radius: 5px; }\n  .q-option.on .mark { border-color: var(--task-accent); background: var(--task-accent); box-shadow: inset 0 0 0 3px var(--task-surface); }\n  .q-option input.other-text {\n    flex: 1; font: inherit; font-size: 15px;\n    border: none; border-bottom: 1px solid var(--task-line-soft);\n    background: transparent; padding: 2px 0; color: var(--task-ink);\n  }\n  .q-option input.other-text:focus { outline: none; border-bottom-color: var(--task-accent); }\n\n  .q-scale-wrap { display: inline-block; max-width: 100%; }\n  .q-scale { display: flex; gap: 8px; flex-wrap: wrap; }\n  .q-scale button {\n    font: inherit; font-size: 17px;\n    min-width: 52px; height: 52px;\n    border: 1px solid var(--task-line);\n    background: var(--task-surface);\n    border-radius: 10px;\n    cursor: pointer;\n    color: var(--task-ink);\n    transition: all 0.15s ease;\n  }\n  .q-scale button:hover { border-color: var(--task-accent-hover); }\n  .q-scale button.on { border-color: var(--task-accent); background: var(--task-accent); color: var(--task-surface); }\n  .q-scale.faces button, .q-scale.stars button { font-size: 24px; }\n  .q-scale.stars button.on { background: var(--task-surface); color: var(--task-accent); border-color: var(--task-accent); }\n\n  .q-scale-labels {\n    display: flex; justify-content: space-between;\n    margin-top: 10px; font-size: 12px; color: var(--task-muted); gap: 12px;\n  }\n  .q-scale-labels span:nth-child(2) { text-align: center; }\n  .q-scale-labels span:last-child { text-align: right; }\n\n\n  /* Yes/No: two large targets rather than a list, because a binary answer\n     should not look like a list that happens to have two entries. */\n  .q-binary { display: flex; gap: 14px; flex-wrap: wrap; }\n  .q-binary button {\n    flex: 1 1 160px;\n    font: inherit;\n    background: var(--task-surface);\n    border: 1px solid var(--task-line);\n    border-radius: 14px;\n    padding: 26px 18px;\n    cursor: pointer;\n    transition: all 0.15s ease;\n    display: flex; flex-direction: column; align-items: center; gap: 10px;\n  }\n  .q-binary button:hover { border-color: var(--task-accent-hover); }\n  .q-binary button.on { border-color: var(--task-accent); background: var(--task-accent-soft); }\n  .q-binary .glyph { font-size: 30px; line-height: 1; }\n  .q-binary .word { font-size: 17px; color: var(--task-ink); }\n\n  /* Matrix: a grid on anything with room, a stack of small groups when\n     there is not \u2014 a grid squeezed onto a phone is unreadable either way. */\n  .q-matrix { width: 100%; border-collapse: collapse; }\n  .q-matrix th, .q-matrix td { padding: 10px 8px; text-align: center; }\n  .q-matrix th { font-size: 12px; font-weight: 500; color: var(--task-ink-3); }\n  .q-matrix th.stmt, .q-matrix td.stmt {\n    text-align: left; font-size: 15px; color: var(--task-ink); width: 40%;\n  }\n  .q-matrix tbody tr:nth-child(odd) { background: var(--task-surface); }\n  .q-matrix tbody tr td:first-child { border-radius: 8px 0 0 8px; }\n  .q-matrix tbody tr td:last-child { border-radius: 0 8px 8px 0; }\n  .q-cell { width: 20px; height: 20px; border: 1.5px solid var(--task-accent-hover); background: #FFF; cursor: pointer; display: inline-block; }\n  .q-cell.radio { border-radius: 50%; }\n  .q-cell.box { border-radius: 5px; }\n  .q-cell.on { border-color: var(--task-accent); background: var(--task-accent); box-shadow: inset 0 0 0 3px var(--task-surface); }\n\n  .q-matrix-stack .stack-group { margin-bottom: 18px; }\n  .q-matrix-stack .stack-stmt { font-size: 15px; color: var(--task-ink); margin-bottom: 8px; }\n\n  .q-input {\n    width: 100%; font: inherit; font-size: 17px;\n    padding: 14px 16px; border: 1px solid var(--task-line); border-radius: 12px;\n    background: var(--task-surface); color: var(--task-ink);\n  }\n  .q-input:focus { outline: none; border-color: var(--task-accent); background: #FFF; }\n  .q-input-note { font-size: 12px; color: var(--task-muted); margin-top: 8px; }\n\n  .q-actions { margin-top: 30px; display: flex; align-items: center; gap: 14px; }\n  .q-continue {\n    font: inherit; font-size: 15px;\n    background: var(--task-accent); color: var(--task-surface);\n    border: none; border-radius: 10px;\n    padding: 12px 26px; cursor: pointer;\n    transition: background 0.2s ease;\n  }\n  .q-continue:hover:not(:disabled) { background: var(--task-warn); }\n  .q-continue:disabled { opacity: 0.4; cursor: default; }\n  .q-skip {\n    font: inherit; font-size: 14px; color: var(--task-muted);\n    background: none; border: none; cursor: pointer; text-decoration: underline;\n  }\n  .q-skip:hover { color: var(--task-ink); }\n\n";
+  const TASK_CSS = `
+:root {
+  --task-accent: #C15F3C;
+  --task-accent-hover: #C9A491;
+  --task-accent-soft: #F6E9E1;
+  --task-accent-line: #E4CDBE;
+  --task-warn: #A94E2E;
+  --task-surface: #FAF9F5;
+  --task-surface-hi: #FFFFFF;
+  --task-line: #E0DBCE;
+  --task-line-soft: #D8D3C6;
+  --task-ink: #29261F;
+  --task-ink-2: #5C574C;
+  --task-ink-3: #6B665A;
+  --task-muted: #8A8578;
+  --task-muted-2: #8A7C6A;
+  /* Room around a question. Apps whose question slot already sits in a
+     padded column (the selector) set this to 0; a phone frame needs extra
+     at the top to clear its status bar. */
+  --task-q-pad: 56px 32px 48px;
+  --task-q-width: 600px;
+  /* Empty radio/checkbox marks: derived from the ink, not the line colour,
+     because some palettes' lines are too pale to show an empty circle. */
+  --task-mark: color-mix(in srgb, var(--task-ink) 28%, transparent);
+}
+
+  /* ---- Route-task banner (the selector draws it inside its column) ---- */
+  .task-banner {
+    background: var(--task-accent-soft);
+    border: 1px solid var(--task-accent-line);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 28px;
+    animation: qIn 0.4s ease both;
+  }
+  .task-banner .eyebrow { margin-bottom: 4px; }
+  .task-banner p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--task-ink); }
+  .task-banner-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+  /* Always on screen during a route task. A task that only ends on success
+     needs a way out, or someone who cannot find it is simply stuck. */
+  .task-giveup {
+    font: inherit; font-size: 12px; color: var(--task-muted-2);
+    background: none; border: none; padding: 0; cursor: pointer;
+    text-decoration: underline; white-space: nowrap;
+  }
+  .task-giveup:hover { color: var(--task-warn); }
+  .task-retry {
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--task-accent-line);
+    font-size: 14px; color: var(--task-warn);
+  }
+
+  /* ---- Questions --------------------------------------------------------
+     One centred column, the same in every app: a narrow measure reads as a
+     question being asked, where options stretched across a 1180px frame
+     read as a form to get through. Vertically centred when the slot has a
+     height of its own (Shvil's frame, photo's phone). */
+  .q-block {
+    box-sizing: border-box;
+    width: 100%; max-width: var(--task-q-width); margin: 0 auto;
+    padding: var(--task-q-pad);
+    min-height: 100%;
+    display: flex; flex-direction: column; justify-content: center;
+    animation: qIn 0.4s ease both;
+    /* Lets the layouts below respond to the room the question has — a
+       375px phone inside a wide browser is narrow, whatever the window. */
+    container-type: inline-size;
+  }
+  @keyframes qIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* What kind of answer is wanted, said before the question rather than
+     discovered by clicking: "Choose one", "Choose any", "Optional". */
+  .q-eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--task-accent); margin: 0 0 10px;
+  }
+  /* No font-family: the heading takes each app's own h1 face, so a
+     question in Shvil looks like Shvil and not like the selector. */
+  .q-block h1 {
+    font-size: 30px; line-height: 1.2; letter-spacing: -0.01em;
+    margin: 0 0 10px; color: var(--task-ink);
+  }
+  .q-block .q-desc { margin: 0 0 4px; font-size: 15px; line-height: 1.6; color: var(--task-ink-2); }
+  .q-body { margin-top: 24px; }
+
+  /* Choices: full-width rows, generous to hit, with a clear chosen state. */
+  .q-options { display: flex; flex-direction: column; gap: 10px; }
+  .q-option {
+    display: flex; align-items: center; gap: 14px;
+    text-align: left; font: inherit; font-size: 16px; color: var(--task-ink);
+    background: var(--task-surface-hi);
+    border: 1.5px solid var(--task-line);
+    border-radius: 14px;
+    padding: 15px 18px; min-height: 56px; box-sizing: border-box;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+  .q-option:hover { border-color: var(--task-accent-hover); box-shadow: 0 2px 10px rgba(0,0,0,0.05); transform: translateY(-1px); }
+  .q-option.on { border-color: var(--task-accent); background: var(--task-accent-soft); box-shadow: none; transform: none; }
+  .q-option:focus-visible { outline: 2px solid var(--task-accent); outline-offset: 2px; }
+  .q-option .mark {
+    width: 20px; height: 20px; flex: none; box-sizing: border-box;
+    border: 1.5px solid var(--task-mark);
+    background: var(--task-surface-hi);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all 0.15s ease;
+  }
+  .q-option:hover .mark { border-color: var(--task-accent-hover); }
+  .q-option .mark.radio { border-radius: 50%; }
+  .q-option .mark.box   { border-radius: 6px; }
+  .q-option.on .mark.radio { border: 6px solid var(--task-accent); }
+  .q-option.on .mark.box { border-color: var(--task-accent); background: var(--task-accent); }
+  .q-option.on .mark.box::after {
+    content: ''; width: 5px; height: 10px; margin-top: -2px;
+    border: solid var(--task-surface-hi); border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  /* "None of these" is a different kind of answer from the choices, so it
+     sits a little apart from them. */
+  .q-option[data-optout] { margin-top: 6px; }
+  .q-option input.other-text {
+    flex: 1; min-width: 0; font: inherit; font-size: 16px;
+    border: none; border-bottom: 1px solid var(--task-line);
+    background: transparent; padding: 2px 0; color: var(--task-ink);
+  }
+  .q-option input.other-text::placeholder { color: var(--task-muted); }
+  .q-option input.other-text:focus { outline: none; border-bottom-color: var(--task-accent); }
+
+  /* Opinion scale: one bar across the column, ends labelled underneath. */
+  .q-scale-wrap { width: 100%; }
+  .q-scale { display: flex; gap: 8px; }
+  .q-scale button {
+    flex: 1 1 0; min-width: 0; height: 56px;
+    font: inherit; font-size: 17px; font-weight: 500; color: var(--task-ink);
+    border: 1.5px solid var(--task-line); background: var(--task-surface-hi);
+    border-radius: 12px; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .q-scale button:hover { border-color: var(--task-accent-hover); transform: translateY(-1px); }
+  .q-scale button.on { border-color: var(--task-accent); background: var(--task-accent); color: var(--task-surface-hi); transform: none; }
+  .q-scale button:focus-visible { outline: 2px solid var(--task-accent); outline-offset: 2px; }
+  .q-scale.faces button { font-size: 28px; height: 64px; }
+  .q-scale.faces button.on { background: var(--task-accent-soft); border-color: var(--task-accent); }
+  .q-scale.stars { gap: 4px; }
+  /* Stars sit together, as a rating does, rather than spread to fill. */
+  .q-scale.stars button {
+    flex: 0 0 52px; font-size: 34px; height: 60px; border-color: transparent; background: none;
+    color: var(--task-line-soft);
+  }
+  .q-scale.stars button:hover { color: var(--task-accent-hover); transform: scale(1.08); }
+  .q-scale.stars button.on { color: var(--task-accent); background: none; border-color: transparent; }
+  /* Ten points in a phone are ten slivers; two rows of five are buttons. */
+  @container (max-width: 440px) {
+    .q-scale.many { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+    .q-scale.many button { height: 52px; }
+  }
+  .q-scale-labels {
+    display: flex; justify-content: space-between; gap: 12px;
+    margin-top: 10px; font-size: 13px; color: var(--task-muted);
+  }
+  .q-scale-labels span:nth-child(2) { text-align: center; }
+  .q-scale-labels span:last-child { text-align: right; }
+
+  /* Yes/No: two large targets rather than a list that happens to have two
+     entries — a binary answer should look binary. */
+  .q-binary { display: flex; gap: 14px; flex-wrap: wrap; }
+  .q-binary button {
+    flex: 1 1 160px; min-height: 132px;
+    font: inherit; color: var(--task-ink);
+    background: var(--task-surface-hi);
+    border: 1.5px solid var(--task-line); border-radius: 16px;
+    padding: 22px 18px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    transition: all 0.15s ease;
+  }
+  .q-binary button:hover { border-color: var(--task-accent-hover); transform: translateY(-1px); box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+  .q-binary button.on { border-color: var(--task-accent); background: var(--task-accent-soft); transform: none; box-shadow: none; }
+  .q-binary button:focus-visible { outline: 2px solid var(--task-accent); outline-offset: 2px; }
+  .q-binary .glyph {
+    width: 48px; height: 48px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; line-height: 1; color: var(--task-ink-2);
+    background: var(--task-surface); border: 1.5px solid var(--task-line);
+    transition: all 0.15s ease;
+  }
+  .q-binary button.on .glyph { background: var(--task-accent); border-color: var(--task-accent); color: var(--task-surface-hi); }
+  .q-binary .glyph.face { font-size: 30px; background: none; border: none; }
+  .q-binary button.on .glyph.face { background: none; }
+  .q-binary .word { font-size: 17px; font-weight: 600; }
+
+  /* Matrix: a bordered grid on anything with room; a stack of small groups
+     when there is not — decided by the space the question actually has. */
+  .q-matrix-card { border: 1.5px solid var(--task-line); border-radius: 14px; overflow: hidden; background: var(--task-surface-hi); }
+  .q-matrix { width: 100%; border-collapse: collapse; }
+  .q-matrix th, .q-matrix td { padding: 13px 10px; text-align: center; }
+  .q-matrix thead th {
+    font-size: 12px; font-weight: 600; color: var(--task-ink-3);
+    background: var(--task-surface); border-bottom: 1px solid var(--task-line);
+  }
+  .q-matrix th.stmt, .q-matrix td.stmt { text-align: left; font-size: 15px; color: var(--task-ink); width: 42%; padding-left: 18px; }
+  .q-matrix tbody tr + tr td { border-top: 1px solid var(--task-line); }
+  .q-matrix tbody tr:hover td { background: var(--task-surface); }
+  .q-cell {
+    width: 22px; height: 22px; box-sizing: border-box;
+    border: 1.5px solid var(--task-mark); background: var(--task-surface-hi);
+    cursor: pointer; display: inline-block; vertical-align: middle; transition: all 0.15s ease;
+  }
+  .q-cell:hover { border-color: var(--task-accent-hover); }
+  .q-cell.radio { border-radius: 50%; }
+  .q-cell.box { border-radius: 6px; }
+  .q-cell.radio.on { border: 7px solid var(--task-accent); }
+  .q-cell.box.on { border-color: var(--task-accent); background: var(--task-accent); }
+  .q-matrix-stack .stack-group { margin-bottom: 20px; }
+  .q-matrix-stack .stack-stmt { font-size: 15px; font-weight: 600; color: var(--task-ink); margin-bottom: 8px; }
+  /* Stacked, each statement's choices sit side by side as compact
+     buttons — three full-width rows per statement made a short matrix
+     several screens long. They wrap when there are many. */
+  .q-matrix-stack .stack-group .q-options { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  .q-matrix-stack .stack-group .q-option {
+    flex: 1 1 0; min-width: 88px; min-height: 46px; padding: 10px 12px;
+    justify-content: center; gap: 8px; font-size: 14px;
+  }
+  .q-matrix-stack .stack-group .q-option .mark { width: 16px; height: 16px; }
+  .q-matrix-stack .stack-group .q-option.on .mark.radio { border-width: 5px; }
+
+  .q-input {
+    width: 100%; box-sizing: border-box; font: inherit; font-size: 17px;
+    padding: 16px 18px; border: 1.5px solid var(--task-line); border-radius: 14px;
+    background: var(--task-surface-hi); color: var(--task-ink);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .q-input::placeholder { color: var(--task-muted); }
+  .q-input:focus { outline: none; border-color: var(--task-accent); box-shadow: 0 0 0 4px var(--task-accent-soft); }
+  .q-input-note { font-size: 12px; color: var(--task-muted); margin-top: 8px; }
+
+  .q-actions { margin-top: 32px; display: flex; align-items: center; gap: 18px; }
+  .q-continue {
+    font: inherit; font-size: 15px; font-weight: 600;
+    background: var(--task-accent); color: var(--task-surface-hi);
+    border: none; border-radius: 12px; padding: 14px 30px; cursor: pointer;
+    transition: background 0.15s ease, opacity 0.15s ease;
+  }
+  .q-continue:hover:not(:disabled) { filter: brightness(0.9); }
+  .q-continue:focus-visible { outline: 2px solid var(--task-accent); outline-offset: 3px; }
+  /* Disabled reads as "not yet", not as a faded copy of the button. */
+  .q-continue:disabled { background: var(--task-line); color: var(--task-muted); cursor: default; }
+  .q-skip {
+    font: inherit; font-size: 14px; color: var(--task-muted);
+    background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0;
+  }
+  .q-skip:hover { color: var(--task-ink); }
+`;
 
   // The "All done" screen, styled here rather than borrowed from whichever
   // app happened to come first. It used the shapes app's `.success` and
@@ -578,14 +828,19 @@ window.Study = (function () {
     const c = t.config || {};
     const host = slot('question');
     if (!host) return;
-    const desc = c.description ? `<p class="q-desc">${escapeHtml(c.description)}</p>` : '';
+    // A description that only repeats the question adds a second copy of
+    // the same line, which reads as a mistake rather than as help.
+    const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    const desc = c.description && !same(c.description, t.goal_text)
+      ? `<p class="q-desc">${escapeHtml(c.description)}</p>` : '';
     const body = QUESTION_BODY[t.kind] ? QUESTION_BODY[t.kind](c) : choiceMarkup(c);
 
     host.innerHTML = `
       <div class="q-block">
+        <p class="q-eyebrow">${escapeHtml(answerHint(t.kind, c))}</p>
         <h1>${escapeHtml(t.goal_text)}</h1>
         ${desc}
-        ${body}
+        <div class="q-body">${body}</div>
         <div class="q-actions">
           <button class="q-continue" id="q-continue" disabled>Continue</button>
           ${c.required === false ? '<button class="q-skip" id="q-skip">Skip this question</button>' : ''}
@@ -611,6 +866,20 @@ window.Study = (function () {
     cont.addEventListener('click', () => { recordResponse(answer.value()); nextTask(); });
     const skip = document.getElementById('q-skip');
     if (skip) skip.addEventListener('click', () => { recordResponse({ skipped: true }); nextTask(); });
+  }
+
+  // What kind of answer is wanted, said up front. A participant should not
+  // have to click to find out whether several choices are allowed.
+  function answerHint(kind, c) {
+    const lo = c.start_at_one === false ? 0 : 1;
+    const hint = {
+      multiple_choice: c.select === 'multi' ? 'Choose any that apply' : 'Choose one',
+      opinion_scale: c.display === 'stars' ? 'Rate it' : `Rate from ${lo} to ${lo + (c.steps || 10) - 1}`,
+      yes_no: 'Yes or no',
+      matrix: c.select === 'multi' ? 'Any that apply, for each row' : 'One answer for each row',
+      simple_input: ({ number: 'A number', date: 'A date', email: 'Your email' })[c.input_type] || 'In your own words'
+    }[kind] || 'Question';
+    return c.required === false ? `${hint} · Optional` : hint;
   }
 
   function escapeHtml(str) {
@@ -708,7 +977,7 @@ window.Study = (function () {
     // Wrapped so the labels are as wide as the buttons they describe.
     // Spanning the container instead put "great" a long way right of the
     // highest rating, which reads as a different scale entirely.
-    return `<div class="q-scale-wrap"><div class="q-scale ${display}">${buttons}</div>${labels}</div>`;
+    return `<div class="q-scale-wrap"><div class="q-scale ${display}${steps > 6 ? ' many' : ''}">${buttons}</div>${labels}</div>`;
   }
 
   function wireScale(c) {
@@ -737,7 +1006,7 @@ window.Study = (function () {
   function yesNoMarkup(c) {
     const emo = c.display === 'emotions';
     const opt = (v, glyph, word) =>
-      `<button type="button" data-v="${v}"><span class="glyph">${glyph}</span><span class="word">${word}</span></button>`;
+      `<button type="button" data-v="${v}"><span class="glyph${emo ? ' face' : ''}">${glyph}</span><span class="word">${word}</span></button>`;
     return `<div class="q-binary">
       ${opt('yes', emo ? '🙂' : '✓', 'Yes')}
       ${opt('no',  emo ? '🙁' : '✗', 'No')}
@@ -769,7 +1038,12 @@ window.Study = (function () {
 
     // A grid needs horizontal room per choice. Below that it stops being
     // a grid you can read and becomes one you have to decode.
-    const stack = c.optimize_small && window.innerWidth < 620;
+    // Measured on the space the question actually has, not the window:
+    // photo's phone is 375px wide inside a full-size browser, and a grid
+    // squeezed into it is unreadable whatever the window says.
+    const host = slot('question');
+    const room = host ? host.clientWidth : window.innerWidth;
+    const stack = room < 560 || (c.optimize_small && window.innerWidth < 620);
 
     const optOut = c.opt_out
       ? `<div class="q-options" style="margin-top:14px">
@@ -791,7 +1065,7 @@ window.Study = (function () {
         ${optOut}</div>`;
     }
 
-    return `<table class="q-matrix">
+    return `<div class="q-matrix-card"><table class="q-matrix">
       <thead><tr><th class="stmt"></th>
         ${choices.map(ch => `<th>${escapeHtml(ch)}</th>`).join('')}</tr></thead>
       <tbody>
@@ -801,7 +1075,7 @@ window.Study = (function () {
             <span class="q-cell ${mark}" data-stmt="${escapeHtml(st)}" data-v="${escapeHtml(ch)}"></span>
           </td>`).join('')}
         </tr>`).join('')}
-      </tbody></table>${optOut}`;
+      </tbody></table></div>${optOut}`;
   }
 
   function wireMatrix(c) {

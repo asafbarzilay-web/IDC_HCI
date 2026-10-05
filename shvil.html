@@ -1346,7 +1346,11 @@
     } else if (offeringTasks) {
       goal.innerHTML = '<button class="start-tasks-btn clickable" id="start-tasks-btn">Start the tasks →</button>';
       const s = document.getElementById('start-tasks-btn');
-      if (s) s.addEventListener('click', () => { offeringTasks = false; Study.beginTasks(); });
+      if (s) s.addEventListener('click', () => { offeringTasks = false; Study.beginTasks();
+        // Redrawn at once: a question renders into the app's body, not
+        // here, so nothing else would clear the offer — it stayed on
+        // screen through the battery, one click from restarting it.
+        renderPrompt(); });
     } else {
       goal.innerHTML = '';
     }

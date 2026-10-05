@@ -446,6 +446,8 @@
     --task-ink-3: #555555;
     --task-muted: #8A8A8A;
     --task-muted-2: #8A8A8A;
+    /* The phone's status bar sits over the top of the screen. */
+    --task-q-pad: 68px 22px 32px;
   }
 </style>
 </head>
@@ -960,7 +962,11 @@
     } else if (offeringTasks) {
       goal.innerHTML = '<button class="btn start-tasks-btn" id="start-tasks-btn">Start the tasks →</button>';
       const s = document.getElementById('start-tasks-btn');
-      if (s) s.addEventListener('click', () => { offeringTasks = false; Study.beginTasks(); });
+      if (s) s.addEventListener('click', () => { offeringTasks = false; Study.beginTasks();
+        // Redrawn at once: a question renders into the app's body, not
+        // here, so nothing else would clear the offer — it stayed on
+        // screen through the battery, one click from restarting it.
+        renderPrompt(); });
     } else {
       goal.innerHTML = '';
     }
