@@ -16,8 +16,7 @@
        their scoring (direct / indirect / gave up), and the six question
        types with their CSS
      - webcam gaze tracking: consent, calibration, fixations, and the stop
-       control — switched on per task and for free exploration from the
-       dashboard, off unless asked for
+       control — one switch per app in the dashboard, off unless asked for
      - author mode, which reports a demonstrated route to the dashboard
 
    WHAT AN APP MUST SUPPLY (see `cfg` below): the box coordinates are
@@ -43,6 +42,20 @@ window.Study = (function () {
   const AUTHOR_MODE      = params.get('authorMode') === '1';
   const QUESTION_PREVIEW = params.get('previewQuestion') === '1';
   const DEBUG            = params.get('debug') === '1';
+
+  // What a preview should show besides the screen id. A screen partway
+  // into a flow depends on what led there — Shvil's walker page is one of
+  // ten walkers — and a preview drawn with defaults paints a participant's
+  // clicks on Tamar's page over Noa's. The dashboard passes either the
+  // app's own snapshot for that step (`previewState`, from authoring) or,
+  // for tasks saved before snapshots existed, the demonstrated choices
+  // leading to it (`previewRoute`), which the app turns into state itself.
+  const jsonParam = (k) => {
+    try { const v = params.get(k); return v ? JSON.parse(v) : null; }
+    catch { return null; }
+  };
+  const PREVIEW_STATE = jsonParam('previewState');
+  const PREVIEW_ROUTE = jsonParam('previewRoute');
 
   // Defaults chosen so a misconfigured app records nothing rather than
   // recording something wrong. A missing `hitOf` reporting every click as
@@ -84,6 +97,11 @@ window.Study = (function () {
     // partway in with that state restored. An app with no state worth
     // restoring leaves this returning null.
     snapshot: () => null,
+    // The same kind of state as snapshot() returns, rebuilt from a list of
+    // recorded choices [{step, value}] — the app's own vocabulary, so only
+    // the app can read it. Used for previews of tasks that have no
+    // snapshots. Null when the app has nothing to rebuild.
+    stateFromRoute: (route) => null,
     // 'app' | 'question' | 'done'. Lets the app hide its own chrome —
     // a Back button belongs to the app, not to the question over it.
     chrome: () => {},
@@ -297,13 +315,47 @@ window.Study = (function () {
   // looks exactly as it did and any other app can restate them.
   const TASK_CSS = ":root {\n  --task-accent: #C15F3C;\n  --task-accent-hover: #C9A491;\n  --task-accent-soft: #F6E9E1;\n  --task-accent-line: #E4CDBE;\n  --task-warn: #A94E2E;\n  --task-surface: #FAF9F5;\n  --task-surface-hi: #FFFFFF;\n  --task-line: #E0DBCE;\n  --task-line-soft: #D8D3C6;\n  --task-ink: #29261F;\n  --task-ink-2: #5C574C;\n  --task-ink-3: #6B665A;\n  --task-muted: #8A8578;\n  --task-muted-2: #8A7C6A;\n}\n  /* ---- Task battery ---------------------------------------------- */\n  .task-banner {\n    background: var(--task-accent-soft);\n    border: 1px solid var(--task-accent-line);\n    border-radius: 12px;\n    padding: 14px 18px;\n    margin-bottom: 28px;\n    animation: flowIn 0.4s ease both;\n  }\n  .task-banner .eyebrow { margin-bottom: 4px; }\n  .task-banner p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--task-ink); }\n\n\n  .task-banner-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }\n  /* Always on screen during a route task. A task that only ends on success\n     needs a way out, or someone who cannot find it is simply stuck. */\n  .task-giveup {\n    font: inherit;\n    font-size: 12px;\n    color: var(--task-muted-2);\n    background: none;\n    border: none;\n    padding: 0;\n    cursor: pointer;\n    text-decoration: underline;\n    white-space: nowrap;\n  }\n  .task-giveup:hover { color: var(--task-warn); }\n\n  .task-retry {\n    margin-top: 12px;\n    padding-top: 12px;\n    border-top: 1px solid var(--task-accent-line);\n    font-size: 14px;\n    color: var(--task-warn);\n  }\n\n  .q-block { animation: flowIn 0.4s ease both; }\n  .q-block h1 {\n    font-family: 'Newsreader', Georgia, serif;\n    font-size: 30px;\n    font-weight: 500;\n    margin: 0 0 10px;\n    letter-spacing: -0.01em;\n  }\n  .q-block .q-desc { margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: var(--task-ink-2); }\n\n  .q-options { display: flex; flex-direction: column; gap: 10px; }\n  .q-option {\n    display: flex;\n    align-items: center;\n    gap: 12px;\n    text-align: left;\n    font: inherit;\n    font-size: 16px;\n    background: var(--task-surface);\n    border: 1px solid var(--task-line);\n    border-radius: 12px;\n    padding: 15px 18px;\n    cursor: pointer;\n    transition: all 0.15s ease;\n    color: var(--task-ink);\n  }\n  .q-option:hover { border-color: var(--task-accent-hover); }\n  .q-option.on { border-color: var(--task-accent); background: var(--task-accent-soft); }\n  .q-option .mark {\n    width: 19px; height: 19px; flex: none;\n    border: 1.5px solid var(--task-accent-hover);\n    background: var(--task-surface-hi);\n  }\n  .q-option .mark.radio { border-radius: 50%; }\n  .q-option .mark.box   { border-radius: 5px; }\n  .q-option.on .mark { border-color: var(--task-accent); background: var(--task-accent); box-shadow: inset 0 0 0 3px var(--task-surface); }\n  .q-option input.other-text {\n    flex: 1; font: inherit; font-size: 15px;\n    border: none; border-bottom: 1px solid var(--task-line-soft);\n    background: transparent; padding: 2px 0; color: var(--task-ink);\n  }\n  .q-option input.other-text:focus { outline: none; border-bottom-color: var(--task-accent); }\n\n  .q-scale-wrap { display: inline-block; max-width: 100%; }\n  .q-scale { display: flex; gap: 8px; flex-wrap: wrap; }\n  .q-scale button {\n    font: inherit; font-size: 17px;\n    min-width: 52px; height: 52px;\n    border: 1px solid var(--task-line);\n    background: var(--task-surface);\n    border-radius: 10px;\n    cursor: pointer;\n    color: var(--task-ink);\n    transition: all 0.15s ease;\n  }\n  .q-scale button:hover { border-color: var(--task-accent-hover); }\n  .q-scale button.on { border-color: var(--task-accent); background: var(--task-accent); color: var(--task-surface); }\n  .q-scale.faces button, .q-scale.stars button { font-size: 24px; }\n  .q-scale.stars button.on { background: var(--task-surface); color: var(--task-accent); border-color: var(--task-accent); }\n\n  .q-scale-labels {\n    display: flex; justify-content: space-between;\n    margin-top: 10px; font-size: 12px; color: var(--task-muted); gap: 12px;\n  }\n  .q-scale-labels span:nth-child(2) { text-align: center; }\n  .q-scale-labels span:last-child { text-align: right; }\n\n\n  /* Yes/No: two large targets rather than a list, because a binary answer\n     should not look like a list that happens to have two entries. */\n  .q-binary { display: flex; gap: 14px; flex-wrap: wrap; }\n  .q-binary button {\n    flex: 1 1 160px;\n    font: inherit;\n    background: var(--task-surface);\n    border: 1px solid var(--task-line);\n    border-radius: 14px;\n    padding: 26px 18px;\n    cursor: pointer;\n    transition: all 0.15s ease;\n    display: flex; flex-direction: column; align-items: center; gap: 10px;\n  }\n  .q-binary button:hover { border-color: var(--task-accent-hover); }\n  .q-binary button.on { border-color: var(--task-accent); background: var(--task-accent-soft); }\n  .q-binary .glyph { font-size: 30px; line-height: 1; }\n  .q-binary .word { font-size: 17px; color: var(--task-ink); }\n\n  /* Matrix: a grid on anything with room, a stack of small groups when\n     there is not \u2014 a grid squeezed onto a phone is unreadable either way. */\n  .q-matrix { width: 100%; border-collapse: collapse; }\n  .q-matrix th, .q-matrix td { padding: 10px 8px; text-align: center; }\n  .q-matrix th { font-size: 12px; font-weight: 500; color: var(--task-ink-3); }\n  .q-matrix th.stmt, .q-matrix td.stmt {\n    text-align: left; font-size: 15px; color: var(--task-ink); width: 40%;\n  }\n  .q-matrix tbody tr:nth-child(odd) { background: var(--task-surface); }\n  .q-matrix tbody tr td:first-child { border-radius: 8px 0 0 8px; }\n  .q-matrix tbody tr td:last-child { border-radius: 0 8px 8px 0; }\n  .q-cell { width: 20px; height: 20px; border: 1.5px solid var(--task-accent-hover); background: #FFF; cursor: pointer; display: inline-block; }\n  .q-cell.radio { border-radius: 50%; }\n  .q-cell.box { border-radius: 5px; }\n  .q-cell.on { border-color: var(--task-accent); background: var(--task-accent); box-shadow: inset 0 0 0 3px var(--task-surface); }\n\n  .q-matrix-stack .stack-group { margin-bottom: 18px; }\n  .q-matrix-stack .stack-stmt { font-size: 15px; color: var(--task-ink); margin-bottom: 8px; }\n\n  .q-input {\n    width: 100%; font: inherit; font-size: 17px;\n    padding: 14px 16px; border: 1px solid var(--task-line); border-radius: 12px;\n    background: var(--task-surface); color: var(--task-ink);\n  }\n  .q-input:focus { outline: none; border-color: var(--task-accent); background: #FFF; }\n  .q-input-note { font-size: 12px; color: var(--task-muted); margin-top: 8px; }\n\n  .q-actions { margin-top: 30px; display: flex; align-items: center; gap: 14px; }\n  .q-continue {\n    font: inherit; font-size: 15px;\n    background: var(--task-accent); color: var(--task-surface);\n    border: none; border-radius: 10px;\n    padding: 12px 26px; cursor: pointer;\n    transition: background 0.2s ease;\n  }\n  .q-continue:hover:not(:disabled) { background: var(--task-warn); }\n  .q-continue:disabled { opacity: 0.4; cursor: default; }\n  .q-skip {\n    font: inherit; font-size: 14px; color: var(--task-muted);\n    background: none; border: none; cursor: pointer; text-decoration: underline;\n  }\n  .q-skip:hover { color: var(--task-ink); }\n\n";
 
+  // The "All done" screen, styled here rather than borrowed from whichever
+  // app happened to come first. It used the shapes app's `.success` and
+  // `.restart-btn` classes, which no other app defines, so photo and Shvil
+  // finished on unstyled browser defaults. Colours come from the same
+  // --task-* variables as the questions; the heading is an <h1>, so it
+  // takes each app's own heading font.
+  const DONE_CSS = `
+  .sd-done {
+    /* Fills the host when the host has a height (Shvil's frame, photo's
+       phone) so the message sits in the middle; 420px otherwise. */
+    min-height: max(420px, 100%); box-sizing: border-box; padding: 56px 24px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; animation: sdIn 0.45s ease both;
+  }
+  .sd-badge {
+    width: 76px; height: 76px; border-radius: 50%; margin-bottom: 26px;
+    background: var(--task-accent); color: var(--task-surface);
+    display: flex; align-items: center; justify-content: center;
+    animation: sdPop 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+  .sd-done h1 { font-size: 40px; line-height: 1.1; margin: 0 0 12px; color: var(--task-ink); }
+  .sd-copy { font-size: 17px; line-height: 1.5; color: var(--task-ink-2); margin: 0 0 30px; max-width: 420px; }
+  .sd-btn {
+    font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: var(--task-accent); color: var(--task-surface);
+    border: none; border-radius: 12px; padding: 13px 30px;
+    transition: background 0.15s ease;
+  }
+  .sd-btn:hover:not(:disabled) { background: var(--task-accent-hover); }
+  .sd-btn:disabled { opacity: 0.6; cursor: default; }
+  @keyframes sdIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes sdPop { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+  `;
+
   let stylesInjected = false;
   function injectStyles() {
     if (stylesInjected || !document.head) return;
     stylesInjected = true;
     const el = document.createElement('style');
     el.id = 'study-task-css';
-    el.textContent = TASK_CSS;
+    el.textContent = TASK_CSS + DONE_CSS;
     // Prepended, not appended: the app's own stylesheet must be able to
     // override these without needing !important on every rule.
     document.head.insertBefore(el, document.head.firstChild);
@@ -860,15 +912,13 @@ window.Study = (function () {
     const host = slot('question');
     if (!host) return;
     host.innerHTML = `
-      <div class="success">
-        <div class="success-badge">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#F0EEE6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      <div class="sd-done">
+        <div class="sd-badge">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
         </div>
         <h1>All done</h1>
-        <p class="success-copy">Thank you — that is everything we needed.</p>
-        <div class="success-actions">
-          <button class="restart-btn" id="done-btn">I'm done</button>
-        </div>
+        <p class="sd-copy">Thank you — that is everything we needed.</p>
+        <button class="sd-btn" id="done-btn">I'm done</button>
       </div>`;
     wireDoneButton();
   }
@@ -962,12 +1012,13 @@ window.Study = (function () {
     studyMode = settings.mode;
     battery = studyMode === 'free' ? [] : await loadBattery();
 
-    // Free play only happens when the mode allows it — or when "tasks
-    // only" has nothing to run, in which case the app is free play anyway.
-    gazeFree = settings.gaze_free
-      && (studyMode !== 'tasks' || battery.length === 0);
-    const gazeTasks = battery.some(t => t.kind === 'app_route' && t.gaze === true);
-    gazeState = (gazeFree || gazeTasks) ? await setUpGaze() : null;
+    // One switch per app, all or nothing: free exploration and every
+    // in-app task. Asked for only when this participant will meet at least
+    // one of those — a battery of questions alone has nothing to look at.
+    gazeFree = settings.gaze_free;
+    const appTime = studyMode !== 'tasks' || battery.length === 0
+      || battery.some(t => t.kind === 'app_route');
+    gazeState = (gazeFree && appTime) ? await setUpGaze() : null;
 
     if (beforeSession) await beforeSession();
     begin(false);
@@ -996,6 +1047,17 @@ window.Study = (function () {
 
   function giveUp() { finishRouteTask('gave_up'); }
 
+  // The state a preview should be drawn with, or null for the defaults.
+  function previewState() {
+    if (!PREVIEW_MODE) return null;
+    if (PREVIEW_STATE && typeof PREVIEW_STATE === 'object') return PREVIEW_STATE;
+    if (Array.isArray(PREVIEW_ROUTE) && PREVIEW_ROUTE.length) {
+      try { return cfg.stateFromRoute(PREVIEW_ROUTE) || null; }
+      catch (err) { console.warn('stateFromRoute failed; previewing with defaults', err); }
+    }
+    return null;
+  }
+
   // Never lets an app's snapshot break authoring: a hook that throws, or
   // returns something JSON cannot hold, means "no state", not "no route".
   function safeSnapshot() {
@@ -1017,11 +1079,12 @@ window.Study = (function () {
   // hold one — only the estimated point is written, in exactly the same
   // box-relative coordinates as clicks so the two overlay cleanly.
   //
-  // Off unless the dashboard asks for it: per route task, and separately
-  // for free exploration. The camera is asked for once, up front, if
-  // anything this participant will do wants it — calibrating halfway
-  // through a battery would put a minute of dot-clicking inside a task's
-  // timing. Once on, it records only while the current context wants it.
+  // Off unless the dashboard switches it on for the app, and then it is
+  // all or nothing: free exploration and every in-app task. A switch per
+  // task was tried first and dropped — it meant a camera that was on but
+  // not recording for parts of a run. Asked for once, up front, because
+  // calibrating halfway through a battery would put a minute of
+  // dot-clicking inside a task's timing. Question screens never record.
   //
   // Accuracy is region-level, not button-level, and that was measured
   // rather than assumed: it answers "did they scan the whole row before
@@ -1085,7 +1148,7 @@ window.Study = (function () {
   // table's CHECK allows.
   let gazeState = null;
   let gazeOn = false;
-  let gazeFree = false;        // free exploration records gaze
+  let gazeFree = false;        // the app's eye-tracking switch
   let gazeOverlayUp = false;   // consent or calibration owns the screen
   let gazeBuffer = [];         // closed fixations waiting to be sent
   let fixation = null;         // the look currently being accumulated
@@ -1100,11 +1163,12 @@ window.Study = (function () {
 
   // Does what is on screen right now want its gaze recorded?
   function gazeWanted() {
+    if (!gazeFree) return false;
     const t = currentTask();
-    if (t) return t.kind === 'app_route' && t.gaze === true;
+    if (t) return t.kind === 'app_route';
     // Before the battery (or with none): free exploration. After it the
     // participant is on "All done", which belongs to nothing.
-    return taskIndex === -1 && gazeFree;
+    return taskIndex === -1;
   }
 
   // Asking for the camera at all only makes sense on a device that has a
@@ -1788,6 +1852,7 @@ window.Study = (function () {
     startStudy,
     beginTasks,
     giveUp,
+    previewState,
     reportToAuthor,
     renderQuestion,
     currentTask,

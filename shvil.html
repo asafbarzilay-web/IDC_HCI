@@ -609,6 +609,39 @@
     // Everything a screen can depend on, minus the screen itself. Sent to
     // the dashboard with each choice while authoring; restored by
     // resetApp() when a task starts partway in.
+    // For previews of tasks saved before snapshots: replay the recorded
+    // choices that led to a screen. Only this app can read its own values
+    // ('open:5', 'time:19:00', 'thread:3'), so the rebuilding lives here.
+    stateFromRoute: (route) => {
+      const s = {};
+      let lastWalker = null;
+      const presets = [[0, '16:00'], [1, '08:30'], [2, '10:00']];
+      route.forEach(({ step, value }) => {
+        const v = String(value || '');
+        const [k, ...rest] = v.split(':');
+        const arg = rest.join(':');
+        const n = Number(arg);
+        if ((k === 'open' || k === 'book') && Number.isFinite(n)) { s.walkerId = n; lastWalker = n; }
+        else if (k === 'thread' && Number.isFinite(n)) s.chatWalkerId = n;
+        // "Message X" from a walker's profile opens X's thread.
+        else if (v === 'nav:chat' && step === 'walker' && lastWalker != null) s.chatWalkerId = lastWalker;
+        else if (k === 'quickslot' && presets[n]) { s.bDate = presets[n][0]; s.bTime = presets[n][1]; }
+        else if (k === 'day' && Number.isFinite(n)) s.bDate = n;
+        else if (k === 'time' && arg) s.bTime = arg;
+        else if (k === 'dur' && Number.isFinite(n)) s.bDur = n;
+        else if (k === 'dog' && Number.isFinite(n)) s.bDogIdx = n;
+        else if (k === 'pay' && arg) s.payMethod = arg;
+        else if (k === 'star' && Number.isFinite(n)) s.rating = n;
+        else if (k === 'tip' && Number.isFinite(n)) s.tip = n;
+        else if (k === 'size' && arg) s.dogSize = arg;
+        else if (k === 'view' && arg) s.view = arg;
+        else if (k === 'sort' && arg) s.sortKey = arg;
+        else if (k === 'traits') s.dogTraits = arg === 'none' ? [] : arg.split(', ');
+        else if (k === 'tags') s.tags = arg === 'none' ? [] : arg.split(', ');
+      });
+      return Object.keys(s).length ? s : null;
+    },
+
     snapshot: () => ({
       view, query, filters: { ...filters }, sortKey, walkerId,
       dogName, dogBreed, dogSize, dogTraits: dogTraits.slice(), dogNotes,
@@ -932,7 +965,7 @@
             <button class="slot-row clickable" data-quickslot="2"><span><b>Tuesday</b><div class="muted" style="font-size:12px">10:00, 16:00 free</div></span><span style="color:var(--accent);font-weight:700;font-size:12.5px">Choose</span></button>
           </div>
           <button class="btn primary block clickable" style="margin-top:14px" data-book="${w.id}">${w.instant ? 'Book a walk' : 'Request a walk'}</button>
-          <button class="btn block clickable" style="margin-top:8px" data-goto="chat">Message ${esc(first(w))}</button>
+          <button class="btn block clickable" style="margin-top:8px" data-goto="chat" data-walker="${w.id}">Message ${esc(first(w))}</button>
           <div class="muted" style="margin-top:12px;font-size:11.5px;line-height:1.5">Free cancellation up to 2 hours before. Every walk is insured up to ₪25,000.</div>
         </div>
       </div>
@@ -1048,7 +1081,7 @@
           </div>
           <div style="display:flex;gap:8px;margin-top:16px">
             <button class="btn primary clickable" style="flex:1" data-goto="live">Track the walk</button>
-            <button class="btn clickable" style="flex:1" data-goto="chat">Message ${esc(first(w))}</button>
+            <button class="btn clickable" style="flex:1" data-goto="chat" data-walker="${w.id}">Message ${esc(first(w))}</button>
           </div>
         </div>
         <button class="btn ghost clickable" style="margin-top:18px" data-goto="explore">Back to walkers</button>
@@ -1098,7 +1131,7 @@
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
               <div class="avatar" style="width:46px;height:46px;border-radius:13px"><img src="${pic(w.pic)}" alt=""></div>
               <div style="flex:1"><b style="font-family:'Outfit',sans-serif;font-size:15.5px">${esc(w.name)}</b><div class="muted" style="font-size:12px">with ${esc(dog.name)} · started 18:42</div></div>
-              <button class="btn clickable" style="padding:8px 13px;font-size:12.5px" data-goto="chat">Message</button>
+              <button class="btn clickable" style="padding:8px 13px;font-size:12.5px" data-goto="chat" data-walker="${w.id}">Message</button>
             </div>
             <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
             <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--label);font-weight:600;margin-top:6px"><span>18:42</span><span>${progress}% done</span><span>19:42</span></div>
@@ -1173,10 +1206,16 @@
   };
 
   BODY.chat = () => {
-    const threads = [WALKERS[0], WALKERS[4], WALKERS[2]];
-    const when = ['now', 'Fri', '12 Sep'];
-    const last = ['On our way back, he did great today', 'Thanks! See you Thursday', 'Happy to take Shoko Sunday morning'];
     const w = walker(chatWalkerId);
+    // The three standing conversations, plus the one just opened when it
+    // is someone new — a "Message Adi" that lands in a list without Adi
+    // reads as a broken button.
+    const known = [WALKERS[0], WALKERS[4], WALKERS[2]];
+    const isNew = !known.some(k => k.id === w.id);
+    const threads = isNew ? [w, ...known] : known;
+    const when = isNew ? ['new', 'now', 'Fri', '12 Sep'] : ['now', 'Fri', '12 Sep'];
+    const last = (isNew ? ['Start a conversation'] : []).concat(
+      ['On our way back, he did great today', 'Thanks! See you Thursday', 'Happy to take Shoko Sunday morning']);
     const base = [
       { me: 0, text: `Hi Yael! Just confirming ${bDate===0?'today':DAYS[bDate].label.split(',')[0]} at ${bTime} for ${DOGS[bDogIdx].name}.`, at: '14:02' },
       { me: 1, text: 'Perfect. Code for the lockbox is 4417 — I will re-send it half an hour before.', at: '14:05' },
@@ -1197,7 +1236,7 @@
           <div class="chat-head">
             <div class="avatar" style="width:38px;height:38px"><img src="${pic(w.pic)}" alt=""></div>
             <div style="flex:1"><b style="font-family:'Outfit',sans-serif;font-size:15px">${esc(w.name)}</b><div style="font-size:12px;color:var(--green);font-weight:600">Usually replies in ${w.resp}</div></div>
-            <button class="btn clickable" style="padding:8px 13px;font-size:12.5px" data-goto="walker">Profile</button>
+            <button class="btn clickable" style="padding:8px 13px;font-size:12.5px" data-goto="walker" data-walker="${w.id}">Profile</button>
           </div>
           <div class="chat-msgs">${base.map(m => `<div class="msg-row${m.me?' me':''}"><div class="bubble">${esc(m.text)}</div></div>`).join('')}</div>
           <div class="chat-input-row">
@@ -1228,8 +1267,8 @@
           <div style="flex:1 1 150px;min-width:0"><b style="font-family:'Outfit',sans-serif;font-size:15.5px">${esc(b.w.name)}</b><div class="muted" style="font-size:13px;margin-top:2px">${b.when} · ${b.dur} with ${DOGS[bDogIdx].name}</div></div>
           <div style="display:flex;gap:9px;align-items:center;margin-left:auto">
             <span class="${b.on?'badge-green':'badge-blue'}">${b.status}</span>
-            <button class="btn primary clickable" style="padding:9px 15px;font-size:13px" data-goto="${b.go}">${b.label}</button>
-            <button class="btn clickable" style="padding:9px 14px;font-size:13px" data-goto="chat">Message</button>
+            <button class="btn primary clickable" style="padding:9px 15px;font-size:13px" data-goto="${b.go}" data-walker="${b.w.id}">${b.label}</button>
+            <button class="btn clickable" style="padding:9px 14px;font-size:13px" data-goto="chat" data-walker="${b.w.id}">Message</button>
           </div>
         </div>`).join('')}</div>
       <h3 style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin-bottom:11px">Past</h3>
@@ -1333,8 +1372,20 @@
     const authSubmit = t.closest('[data-auth-submit]');
     if (authSubmit) { go(authSubmit.dataset.authSubmit === 'signup' ? 'dogsetup' : 'explore', 'auth:' + authSubmit.dataset.authSubmit); return; }
 
+    // A button that is about one walker — "Message Tamar", a booking's
+    // Details, a chat's Profile — says so with data-walker, and the screen
+    // it opens is that walker's. Without it, Messages opened Noa's thread
+    // whoever you came from, so "message Adi" was typed to Noa. The
+    // recorded value is unchanged ('nav:chat'), so saved tasks still match.
     const goto = t.closest('[data-goto]');
-    if (goto) { go(goto.dataset.goto, 'nav:' + goto.dataset.goto); return; }
+    if (goto) {
+      const id = Number(goto.dataset.walker);
+      if (WALKERS.some(w => w.id === id)) {
+        if (goto.dataset.goto === 'chat') chatWalkerId = id; else walkerId = id;
+      }
+      go(goto.dataset.goto, 'nav:' + goto.dataset.goto);
+      return;
+    }
 
     const back = t.closest('[data-back]');
     if (back) { go(back.dataset.back, 'back'); return; }
@@ -1478,7 +1529,13 @@
   // =====================================================================
   // Preview / author / question-preview fit, same approach as photo.html.
   // =====================================================================
-  if (PREVIEW) screen = PREVIEW;
+  if (PREVIEW) {
+    screen = PREVIEW;
+    // Drawn with the state the run had on reaching this screen — the
+    // walker, the booking, the conversation — not the app's defaults.
+    const ps = Study.previewState();
+    if (ps) restoreState(ps);
+  }
 
   if (Study.PREVIEW_MODE || Study.AUTHOR_MODE || Study.QUESTION_PREVIEW) {
     const stage = document.querySelector('.stage');

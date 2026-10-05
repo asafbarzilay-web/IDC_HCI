@@ -697,6 +697,18 @@
     // not somewhere a task should start inside.
     snapshot: () => ({ chatWith, searchText }),
 
+    // For previews of tasks saved before snapshots: a choice on Chats is
+    // the person tapped, and a search is recorded as 'search:<text>'.
+    stateFromRoute: (route) => {
+      const s = {};
+      route.forEach(({ step, value }) => {
+        const v = String(value || '');
+        if (step === 'chats' && CHATS.some(c => c.id === v)) s.chatWith = v;
+        else if (v.startsWith('search:')) s.searchText = v.slice(7);
+      });
+      return Object.keys(s).length ? s : null;
+    },
+
     // Deliberately false. This app's screens are a graph — the tab bar
     // reaches anything from anywhere — so there is no moment at which an
     // attempt has run out of road. A participant keeps going until they
@@ -1067,7 +1079,14 @@
   // heatmap dots. Non-interactive and recording nothing, which the core
   // already enforces — this only picks the screen.
   // =====================================================================
-  if (PREVIEW) screen = PREVIEW;
+  if (PREVIEW) {
+    screen = PREVIEW;
+    // Drawn with what the run had on reaching this screen — whose
+    // conversation, what was searched — rather than the defaults.
+    const ps = Study.previewState();
+    if (ps && typeof ps.chatWith === 'string' && CHATS.some(c => c.id === ps.chatWith)) chatWith = ps.chatWith;
+    if (ps && typeof ps.searchText === 'string') searchText = ps.searchText;
+  }
 
   // Fit the frame to the viewport for the dashboard's previews. Runs on
   // resize too: the panel is resizable and the canvas over it redraws from

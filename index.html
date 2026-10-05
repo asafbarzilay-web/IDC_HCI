@@ -366,6 +366,14 @@
     // moved state.step past it, so the step being answered is step - 1 —
     // and its own value is left out: a task starting there must not arrive
     // with the participant's answer pre-selected.
+    // For previews of tasks saved before snapshots: each step's value is
+    // simply that step's answer.
+    stateFromRoute: (route) => {
+      const s = {};
+      route.forEach(({ step, value }) => { if (step in PREVIEW_STEP_INDEX) s[step] = value; });
+      return Object.keys(s).length ? s : null;
+    },
+
     snapshot: () => {
       const answering = state.step - 1;
       const snap = {};
@@ -430,11 +438,12 @@
 
   if (PREVIEW_MODE) {
     state.step = PREVIEW_STEP_INDEX[previewStepParam];
-    if (state.step === 3) {
-      state.number = '2';
-      state.letter = 'B';
-      state.shape = 'square';
-    }
+    // The answers given before this screen, when the dashboard knows them
+    // (a task's demonstrated route); placeholders otherwise.
+    const given = Study.previewState() || {};
+    if (state.step >= 1) state.number = given.number || (state.step === 3 ? '2' : null);
+    if (state.step >= 2) state.letter = given.letter || (state.step === 3 ? 'B' : null);
+    if (state.step === 3) state.shape = given.shape || 'square';
   }
 
   // Identity, the session lifecycle and every insert live in study-core.js

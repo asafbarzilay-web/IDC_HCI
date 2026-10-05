@@ -223,16 +223,13 @@
   .main-tabs {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 26px;
     border-bottom: 1px solid #E0DBCE;
     margin: 18px 0 22px;
   }
-  .main-tab-admin {
-    margin-left: auto;
-    font-size: 16px;
-    padding-left: 26px;
-    border-left: 1px solid #E0DBCE;
-  }
+
+  .main-tab-group { display: flex; align-items: center; gap: 26px; }
 
   .main-tab {
     font-family: Newsreader, Georgia, serif;
@@ -404,15 +401,6 @@
 
   .author-actions { display: flex; align-items: center; gap: 16px; }
 
-  .task-status {
-    font-size: 13px;
-    padding: 10px 14px;
-    border-radius: 10px;
-    background: #F6E9E1;
-    border: 1px solid #E8CDB9;
-    margin-bottom: 12px;
-  }
-  .task-status.muted { background: #F0EEE6; border-color: #E5E1D4; color: #6B665A; }
 
   /* A row is a small card now: a head line (who/what/actions) and a meta
      line below it (the route, as chips, not an inline arrow-chain of
@@ -470,16 +458,7 @@
   }
   .route-chip.bound { background: #F6E9E1; border-color: #E4CDBE; color: #A94E2E; font-weight: 600; }
   .route-chip.skipped { opacity: 0.5; text-decoration: line-through; }
-  .gaze-chip {
-    font: inherit; font-size: 11px; color: #8A8578; background: none;
-    border: 1px solid #E0DBCE; border-radius: 999px; padding: 2px 9px;
-    cursor: pointer; margin-left: 6px; white-space: nowrap;
-  }
-  .gaze-chip:hover { border-color: #C15F3C; color: #29261F; }
-  .gaze-chip.on { color: #3A6E7C; border-color: #9FC0C8; background: #EEF5F6; }
-  .gaze-chip:disabled { opacity: 0.5; cursor: default; }
   .gaze-toggle { margin-top: 6px; }
-  .gaze-toggle.moot { opacity: 0.55; }
   .route-arrow { color: #C9C2B2; font-size: 12px; }
   .task-meta-text { display: block; font-size: 12.5px; color: #8A8578; margin-top: 5px; }
   .task-meta-text b { color: #6B665A; font-weight: 600; }
@@ -853,8 +832,120 @@
   /* Authoring takes the whole panel: the list of existing tasks sitting
      above a half-written new one reads as though you are editing the task
      at the top. */
-  #tasks-panel.authoring #task-list,
-  #tasks-panel.authoring .panel-head { display: none; }
+  #tasks-panel.authoring #journey { display: none; }
+
+  /* ---- Tasks tab: the participant journey ---------------------------
+     The page reads top to bottom in the order a participant meets the
+     study. Optional stages carry a switch; a stage that is off is drawn
+     dashed and greyed, with a hollow dot on the rail, so what a
+     participant will NOT see is as visible as what they will. */
+  /* No card around the journey: the stages are the cards. Restored while
+     authoring, which keeps its own panel layout. */
+  #tasks-panel:not(.authoring) { background: none; border: none; padding: 0; }
+
+  .journey-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .journey-head h2 { font-family: Newsreader, Georgia, serif; font-weight: 400; font-size: 24px; margin: 0; }
+  .journey-head span { font-size: 12px; color: #8A8578; }
+
+  .stage { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 16px; }
+  .stage-rail { display: flex; flex-direction: column; align-items: center; }
+  .stage-dot {
+    width: 12px; height: 12px; border-radius: 6px; margin-top: 18px; box-sizing: border-box;
+    background: #F0EEE6; border: 1.5px solid #C9C3B6; flex: none;
+  }
+  .stage.on .stage-dot { background: #C15F3C; border: none; }
+  .stage-line { flex: 1; width: 1px; background: #DCD6C9; }
+
+  .stage-card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px; margin-bottom: 10px; border-radius: 12px;
+    background: transparent; border: 1px dashed #D8D3C6;
+  }
+  .stage.on .stage-card { background: #FAF9F5; border: 1px solid #E5E1D4; }
+  .stage-card-tasks { display: block; padding: 0; overflow: hidden; }
+  .stage-card-head { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+  .stage-text { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .stage-title { font-family: Newsreader, Georgia, serif; font-size: 19px; color: #8A8578; }
+  .stage-sub { font-size: 12px; line-height: 1.5; color: #A8A296; text-wrap: pretty; }
+  .stage.on .stage-title { color: #29261F; }
+  .stage.on .stage-sub { color: #6B665A; }
+  .stage-url {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6B665A;
+    overflow-wrap: anywhere; background: none; border: none; padding: 0;
+  }
+  .stage-copy {
+    font: inherit; font-size: 12px; padding: 6px 11px; flex: none; cursor: pointer;
+    border: 1px solid #D8D3C6; border-radius: 7px; background: #fff; color: #29261F;
+  }
+  .stage-copy:hover { border-color: #C15F3C; }
+  .stage-done { align-items: start; }
+  .stage-done .stage-dot { background: #29261F; border: none; margin-top: 4px; }
+  .stage-done-text { font-family: Newsreader, Georgia, serif; font-size: 17px; color: #6B665A; }
+  #mode-note { margin: 0 16px 12px; }
+
+  /* A real switch: a button with role="switch", so it is focusable and
+     Space/Enter work without any extra handling. */
+  .switch {
+    width: 34px; height: 20px; border-radius: 10px; position: relative; flex: none;
+    border: none; padding: 0; cursor: pointer; background: #D8D3C6; transition: background 0.15s;
+  }
+  .switch span {
+    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px;
+    background: #fff; transition: left 0.15s;
+  }
+  .switch[aria-checked="true"] { background: #C15F3C; }
+  .switch[aria-checked="true"] span { left: 16px; }
+  .switch:focus-visible { outline: 2px solid #C15F3C; outline-offset: 2px; }
+
+  .main-tab .tab-flag.off { color: #8A8578; background: #E8E4DA; }
+
+  /* ---- task rows ---- */
+  #task-list { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+  #task-list[hidden] { display: none; }
+  #task-list .task-live { display: flex; flex-direction: column; gap: 8px; }
+  #task-list .task-row {
+    display: block; margin: 0; padding: 12px 14px; gap: 0;
+    background: #fff; border: 1px solid #ECE8DF; border-radius: 10px; box-shadow: none;
+  }
+  #task-list .task-row.dim { opacity: 0.65; }
+  #task-list .task-row.dim:hover { opacity: 1; }
+  #task-list .task-line {
+    display: grid; grid-template-columns: 14px 20px minmax(0, 1fr) auto;
+    gap: 12px; align-items: center;
+  }
+  #task-list .task-grip { color: #C9C3B6; font-size: 12px; letter-spacing: 0; cursor: grab; }
+  #task-list .task-row:hover .task-grip { color: #C15F3C; }
+  #task-list .task-seq { font-family: Newsreader, Georgia, serif; font-size: 19px; color: #C15F3C; width: auto; }
+  #task-list .task-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  #task-list .task-name { font-family: Newsreader, Georgia, serif; font-size: 18px; font-weight: 500; }
+  #task-list .task-sum { font-size: 12px; color: #8A8578; }
+  #task-list .task-actions { display: flex; gap: 6px; margin: 0; align-items: center; }
+  #task-list .task-btn { font-size: 12px; padding: 5px 10px; border-radius: 7px; background: #fff; }
+  #task-list .task-btn[aria-expanded="true"] { background: #F0EEE6; color: #29261F; }
+  #task-list .task-btn.quiet { border-color: transparent; background: none; color: #8A8578; }
+  #task-list .task-btn.quiet:hover { border-color: #D8D3C6; color: #29261F; }
+  #task-list .task-detail-panel {
+    margin: 12px 0 0; border: none; border-top: 1px solid #EFEBE0; border-radius: 0;
+    background: none; padding: 12px 0 0 46px;
+  }
+  #task-list .task-row.dragging { opacity: 0.4; }
+
+  .task-define {
+    font: inherit; font-size: 13px; color: #C15F3C; cursor: pointer;
+    border: 1px dashed #C9A491; border-radius: 10px; padding: 11px; background: none; width: 100%;
+  }
+  .task-define:hover { background: #F6E9E1; }
+  .task-more-groups { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .task-group-toggle {
+    font: inherit; font-size: 12px; color: #8A8578; background: none; border: none;
+    text-align: left; padding: 4px 2px; cursor: pointer; letter-spacing: 0.02em;
+  }
+  .task-group-toggle:hover { color: #29261F; }
+  .task-group { display: flex; flex-direction: column; gap: 8px; }
+
 
   /* The dashboard's page wrapper caps at 880px everywhere else, a
      deliberate reading width for text-heavy panels (stats, task lists,
@@ -1250,6 +1341,33 @@
     border: 1px solid #E0DBCE; border-radius: 6px; overflow: hidden; background: #F0EEE6;
   }
   .rt-thumb iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; pointer-events: none; }
+
+  /* Thumbnails are buttons: a screen at 72px is enough to recognise, not
+     to read, so clicking one opens it full size. The iframe inside takes
+     no pointer events, so the click lands on the button. */
+  .rt-thumb, .path-thumb { padding: 0; cursor: zoom-in; font: inherit; }
+  .rt-thumb:hover, .path-thumb:hover { border-color: #C15F3C; }
+  .zoom-overlay {
+    position: fixed; inset: 0; z-index: 1000; background: rgba(41, 38, 31, 0.55);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .zoom-overlay[hidden] { display: none; }
+  .zoom-card {
+    background: #FAF9F5; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    width: min(1200px, 94vw); height: min(860px, 90vh);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .zoom-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px; border-bottom: 1px solid #E0DBCE;
+  }
+  .zoom-head b { font-size: 15px; color: #29261F; }
+  .zoom-close {
+    font: inherit; font-size: 20px; line-height: 1; color: #8A8578; background: none;
+    border: none; cursor: pointer; padding: 4px 8px;
+  }
+  .zoom-close:hover { color: #29261F; }
+  .zoom-card iframe { flex: 1; width: 100%; border: none; background: #F0EEE6; }
   .rt-step-name {
     font-size: 11px; color: #8A8578; text-transform: uppercase; letter-spacing: 0.05em;
     overflow-wrap: anywhere;
@@ -1278,26 +1396,6 @@
   .task-expand[aria-expanded="true"] { background: #F0EEE6; color: #29261F; }
 
 
-  .mode-panel { margin-bottom: 20px; }
-  .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
-  .mode-card {
-    text-align: left; font: inherit; cursor: pointer;
-    background: #FAF9F5; border: 1px solid #E0DBCE; border-radius: 12px;
-    padding: 14px 16px; transition: all 0.15s ease;
-  }
-  .mode-card:hover { border-color: #C9A491; }
-  .mode-card.on { border-color: #C15F3C; background: #F6E9E1; }
-  .mode-card b { display: block; font-size: 14px; color: #29261F; margin-bottom: 3px; }
-  .mode-card span { font-size: 12px; line-height: 1.5; color: #8A8578; }
-  .mode-card.on span { color: #6B665A; }
-  .mode-link {
-    margin-top: 12px; font-size: 12px; color: #8A8578;
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  }
-  .mode-link code {
-    background: #F0EEE6; border: 1px solid #E0DBCE; border-radius: 6px;
-    padding: 3px 8px; color: #29261F; font-size: 12px;
-  }
 
   .error-box {
     background: #F6E9E1;
@@ -1460,13 +1558,15 @@
     <!-- Two top-level surfaces: what participants did, and what you're
          asking them to do. Neither belongs inside the other. -->
     <nav class="main-tabs" id="main-tabs">
+      <!-- Three places, left to right: what people did with no goal, the
+           tasks you set and what came of them (side by side, centred),
+           and the write-up of it all. The dashboard opens on Free style. -->
       <button class="main-tab active" data-view="analytics">Free style</button>
-      <button class="main-tab" data-view="results">Task results</button>
+      <div class="main-tab-group">
+        <button class="main-tab" data-view="tasks">Tasks</button>
+        <button class="main-tab" data-view="results">Task results</button>
+      </div>
       <button class="main-tab" data-view="summary">Summary</button>
-      <!-- Authoring sits apart from reading. Everything to the left is
-           something you look at; Tasks is where you change the study, and
-           reaching results should never route through the editor. -->
-      <button class="main-tab main-tab-admin" data-view="tasks">Tasks</button>
     </nav>
 
     <div id="view-analytics">
@@ -1634,29 +1734,69 @@
          which is why this lives in the dashboard rather than the app. -->
     <div id="view-tasks" hidden>
     <div class="panel" id="tasks-panel">
-      <!-- What anyone opening the app link actually gets. Kept above the
-           task list because it decides whether that list is used at all. -->
-      <div class="mode-panel" id="mode-panel">
-        <h3 style="margin:0 0 4px">What participants get</h3>
-        <p class="tr-meta" style="margin-bottom:12px">One link, three behaviours. Changing this
-        takes effect for the next person who opens it.</p>
-        <div class="mode-grid" id="mode-grid"></div>
-        <div class="empty-note" id="mode-note" hidden></div>
-        <!-- Eye tracking for free exploration. Each route task has its own
-             switch, set when the task is defined. -->
-        <div class="q-toggle gaze-toggle" id="free-gaze-row">
-          <div>Eye tracking during free exploration<small id="free-gaze-hint">Asks participants for their webcam and records roughly where they look while they explore. Desktop only; demonstrative accuracy.</small></div>
-          <input type="checkbox" id="free-gaze">
+      <!-- The study, laid out in the order a participant meets it. Each
+           optional stage carries its own switch; the three-value study
+           mode is derived from the Free style and Tasks switches, so
+           "neither" cannot be expressed. -->
+      <div id="journey">
+        <div class="journey-head">
+          <h2>What a participant goes through</h2>
+          <span>Changes apply to the next person who opens the link</span>
         </div>
-        <div class="mode-link">Send participants: <code id="app-link">index.html</code></div>
+
+        <div class="stage on">
+          <div class="stage-rail"><span class="stage-dot"></span><span class="stage-line"></span></div>
+          <div class="stage-card">
+            <div class="stage-text">
+              <span class="stage-title">Opens the link</span>
+              <code class="stage-url" id="app-link">index.html</code>
+            </div>
+            <button type="button" class="stage-copy" id="copy-link">Copy link</button>
+          </div>
+        </div>
+
+        <div class="stage" id="stage-eye">
+          <div class="stage-rail"><span class="stage-dot"></span><span class="stage-line"></span></div>
+          <div class="stage-card">
+            <div class="stage-text">
+              <span class="stage-title">Use Eye Tracking</span>
+              <span class="stage-sub">Eye tracking during free style and in-app tasks, not on question screens. Desktop only, rough accuracy.</span>
+            </div>
+            <button type="button" class="switch" id="sw-eye" role="switch" aria-checked="false" aria-label="Eye tracking"><span></span></button>
+          </div>
+        </div>
+
+        <div class="stage" id="stage-free">
+          <div class="stage-rail"><span class="stage-dot"></span><span class="stage-line"></span></div>
+          <div class="stage-card">
+            <div class="stage-text">
+              <span class="stage-title">Free style</span>
+              <span class="stage-sub" id="free-copy"></span>
+            </div>
+            <button type="button" class="switch" id="sw-free" role="switch" aria-checked="false" aria-label="Free style"><span></span></button>
+          </div>
+        </div>
+
+        <div class="stage" id="stage-tasks">
+          <div class="stage-rail"><span class="stage-dot"></span><span class="stage-line"></span></div>
+          <div class="stage-card stage-card-tasks">
+            <div class="stage-card-head">
+              <div class="stage-text">
+                <span class="stage-title">Tasks</span>
+                <span class="stage-sub" id="tasks-copy"></span>
+              </div>
+              <button type="button" class="switch" id="sw-tasks" role="switch" aria-checked="false" aria-label="Tasks"><span></span></button>
+            </div>
+            <div class="empty-note" id="mode-note" hidden></div>
+            <div id="task-list"></div>
+          </div>
+        </div>
+
+        <div class="stage stage-done">
+          <div class="stage-rail"><span class="stage-dot"></span></div>
+          <span class="stage-done-text">Done. Thank-you screen.</span>
+        </div>
       </div>
-
-      <header class="panel-head">
-        <h2>Tasks</h2>
-        <button class="refresh-btn" id="new-task-btn">Define a task</button>
-      </header>
-
-      <div id="task-list"></div>
 
       <div id="task-author" hidden>
         <!-- Type is chosen before anything is written. The forms have
@@ -1698,12 +1838,6 @@
             <div class="author-field">
               <label for="task-goal">What the participant reads</label>
               <textarea id="task-goal" rows="2" placeholder="e.g. Select the triangle."></textarea>
-            </div>
-            <!-- Off by default. On, participants on a desktop are asked for
-                 their camera once, before anything else, and calibrate. -->
-            <div class="q-toggle gaze-toggle">
-              <div>Eye tracking<small>Asks participants for their webcam and records roughly where they look during this task. Desktop only; demonstrative accuracy.</small></div>
-              <input type="checkbox" id="task-gaze">
             </div>
 
             <div id="author-error"></div>
@@ -1856,7 +1990,35 @@
   // still cache normally while you work and a reload always gets the
   // current app.
   const PREVIEW_V = Date.now();
-  const previewSrc = (step) => `${appFile()}?previewStep=${step}&v=${PREVIEW_V}`;
+  //
+  // A preview can also carry what led to the screen (`ctx`, from
+  // previewCtx below). Without it every screen is drawn with the app's
+  // defaults — Shvil's walker page is always Noa's — and a participant's
+  // clicks on Tamar's page are painted over Noa's.
+  const previewSrc = (step, ctx) => {
+    let url = `${appFile()}?previewStep=${step}&v=${PREVIEW_V}`;
+    if (ctx && ctx.state) url += `&previewState=${encodeURIComponent(JSON.stringify(ctx.state))}`;
+    else if (ctx && ctx.route) url += `&previewRoute=${encodeURIComponent(JSON.stringify(ctx.route))}`;
+    return url;
+  };
+
+  // What a task's demonstrated route says about one of its screens: the
+  // app's snapshot on arriving there when the task was authored with one,
+  // otherwise the choices made before it, which the app replays into
+  // state itself. A screen the route never visits gets the whole route —
+  // the closest thing to "where this run had got to" there is.
+  function previewCtx(path, step) {
+    const p = path || [];
+    const i = p.findIndex(x => x.step === step);
+    if (i >= 0 && p[i].state) return { state: p[i].state };
+    const before = (i >= 0 ? p.slice(0, i) : p).map(({ step, value }) => ({ step, value }));
+    return before.length ? { route: before } : null;
+  }
+  const taskPath = (taskId) => ((tasks.find(x => x.task_id === taskId) || {}).path) || [];
+  // For a URL going into an attribute: the encoded JSON has no quotes,
+  // but its '&'s should still be written as entities.
+  const escAttr = x => String(x).replace(/[&<>"]/g,
+    ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
   // How a screen id is written for a reader. Capitalising the id worked
   // while ids were single words -- it turns 'logged_out' into 'Logged_out'
@@ -2703,7 +2865,7 @@
   function entryNote(t) {
     const first = (t.path || [])[0];
     if (!t.entry_step || !first || t.entry_step === first.step) return '';
-    return ` · starts at <b>${t.entry_step}</b>`;
+    return ` · starts at <b>${screenLabel(t.entry_step)}</b>`;
   }
 
   function taskEssence(t, kind) {
@@ -2786,7 +2948,7 @@
         const flag = skipped ? 'skipped' : (bound ? 'must match' : 'free');
         const starts = i === entryIdx && entryIdx > 0;
         return `<div class="rt-step${skipped ? ' skipped' : bound ? ' bound' : ''}">
-          <span class="rt-thumb"><iframe src="${previewSrc(p.step)}" tabindex="-1" title="${esc(p.step)} screen"></iframe></span>
+          <button type="button" class="rt-thumb" data-zoom="${esc(p.step)}" data-zoom-src="${esc(previewSrc(p.step, previewCtx(t.path, p.step)))}" title="Show this screen full size"><iframe src="${esc(previewSrc(p.step, previewCtx(t.path, p.step)))}" tabindex="-1" title="${esc(p.step)} screen"></iframe></button>
           <span class="rt-step-name">${esc(p.step)}${starts ? '<span class="rt-start-flag">starts here</span>' : ''}</span>
           <span class="rt-step-value">${esc(p.value)}</span>
           <span class="rt-step-flag">${flag}</span>
@@ -2854,35 +3016,47 @@
   // Study mode
   // =====================================================================
 
-  const STUDY_MODES = {
-    free: {
-      label: 'Free style only',
-      blurb: 'The selector, no tasks. Nobody is asked to do anything.'
-    },
-    tasks: {
-      label: 'Tasks only',
-      blurb: 'The battery starts straight away. Everyone is given the sequence.'
-    },
-    free_then_tasks: {
-      label: 'Free style, then tasks',
-      blurb: 'They explore first, and start the tasks when they say they are ready. The way in stays on screen throughout.'
-    }
-  };
+  // Two switches, one stored value. The participant app reads `mode`
+  // ('free' | 'tasks' | 'free_then_tasks'); the page shows the two stages
+  // it is made of. Both off has no mode, so switching off the last stage
+  // standing turns the other one on instead.
+  const modeOf = (free, tOn) => free && tOn ? 'free_then_tasks' : (free ? 'free' : 'tasks');
+  const freeOn  = () => studyMode !== 'tasks';
+  const tasksOn = () => studyMode !== 'free';
 
   let studyMode = 'tasks';
   let gazeFree = false;
 
+  function setSwitch(id, on) {
+    const sw = document.getElementById(id);
+    sw.setAttribute('aria-checked', String(on));
+    sw.closest('.stage').classList.toggle('on', on);
+  }
+
   function renderModePicker() {
-    const runs = APPS[currentApp].runsTasks;
-    document.getElementById('mode-grid').innerHTML =
-      Object.entries(STUDY_MODES).map(([k, m]) => `
-        <button class="mode-card ${k === studyMode ? 'on' : ''}${!runs && k !== 'free' ? ' unavailable' : ''}"
-                data-mode="${k}">
-          <b>${m.label}</b><span>${m.blurb}</span>
-        </button>`).join('');
+    const free = freeOn(), tOn = tasksOn();
+    setSwitch('sw-eye', gazeFree);
+    setSwitch('sw-free', free);
+    setSwitch('sw-tasks', tOn);
+
+    document.getElementById('free-copy').textContent = !free
+      ? 'Off. Participants go straight to the tasks.'
+      : tOn ? 'They explore the app. A "Start the tasks" button stays on screen until they\'re ready.'
+            : 'They explore the app. Nobody is asked to do anything.';
+
+    const n = tasks.filter(t => t.position != null && !t.hidden).length;
+    // A Tasks stage switched on with nothing active is allowed — with the
+    // list hidden while it is off, refusing it would leave no way to
+    // activate one — but it is said, because participants then only explore.
+    document.getElementById('tasks-copy').textContent = !tOn
+      ? 'Off. Participants only explore.'
+      : n ? `${n} task${n === 1 ? '' : 's'}, in order`
+          : 'No active tasks yet. Participants only explore until you activate one.';
+    document.getElementById('task-list').hidden = !tOn;
 
     // Said on screen rather than only when you click. A control that looks
     // available and silently does nothing is the thing worth avoiding here.
+    const runs = APPS[currentApp].runsTasks;
     const note = document.getElementById('mode-note');
     note.hidden = runs;
     if (!runs) {
@@ -2893,18 +3067,7 @@
 
     document.getElementById('app-link').textContent =
       new URL(APPS[currentApp].file, location.href).href;
-
-    // "Tasks only" never gives anyone free time, so the switch would be a
-    // setting with no effect. Shown greyed rather than hidden, so it is
-    // clear where it lives when the mode changes back.
-    const box = document.getElementById('free-gaze');
-    box.checked = gazeFree;
-    const moot = studyMode === 'tasks';
-    box.disabled = moot;
-    document.getElementById('free-gaze-row').classList.toggle('moot', moot);
-    document.getElementById('free-gaze-hint').textContent = moot
-      ? 'Not used in "Tasks only" — participants never explore freely. Eye tracking for a task is switched on per task.'
-      : 'Asks participants for their webcam and records roughly where they look while they explore. Desktop only; demonstrative accuracy.';
+    renderTaskTabFlag();
   }
 
   async function loadStudyMode() {
@@ -2919,10 +3082,12 @@
     renderModePicker();
   }
 
-  document.getElementById('free-gaze').addEventListener('change', async (e) => {
-    const wanted = e.target.checked;
+  document.getElementById('sw-eye').addEventListener('click', async () => {
+    const wanted = !gazeFree;
     const prev = gazeFree;
+    // Shown at once, put back if the save fails — same as the mode switches.
     gazeFree = wanted;
+    renderModePicker();
     // .select() so the answer is a row count, not just "no error": a
     // missing column or a policy that filters the row out would otherwise
     // look exactly like success.
@@ -2932,19 +3097,29 @@
     if (error || !data || !data.length) {
       gazeFree = prev;
       renderModePicker();
-      document.getElementById('task-list').insertAdjacentHTML('afterbegin',
+      document.getElementById('journey').insertAdjacentHTML('afterbegin',
         `<div class="error-box">Couldn't change eye tracking: ${error ? error.message : 'no settings row was updated'}`
         + `${error && /gaze_free/.test(error.message) ? ' — run supabase_migration_gaze_and_entry_state.sql first.' : ''}</div>`);
     }
   });
 
-  document.getElementById('mode-grid').addEventListener('click', async (e) => {
-    const card = e.target.closest('[data-mode]');
-    if (!card || card.dataset.mode === studyMode) return;
-    const wanted = card.dataset.mode;
+  document.getElementById('sw-free').addEventListener('click', () =>
+    setMode(freeOn() && !tasksOn() ? 'tasks' : modeOf(!freeOn(), tasksOn())));
+  document.getElementById('sw-tasks').addEventListener('click', () =>
+    setMode(tasksOn() && !freeOn() ? 'free' : modeOf(freeOn(), !tasksOn())));
 
-    // Saying yes to a mode that cannot work is worse than refusing it:
-    // "Tasks only" with an empty sequence would show participants nothing.
+  document.getElementById('copy-link').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    try { await navigator.clipboard.writeText(document.getElementById('app-link').textContent); }
+    catch { return; }
+    btn.textContent = 'Copied';
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.textContent = 'Copy link'; }, 1400);
+  });
+
+  async function setMode(wanted) {
+    if (wanted === studyMode) return;
+
     // Refusing a mode the app cannot honour. The failure it prevents is
     // not an error: the mode saves, the picker shows it, and every
     // participant quietly gets free play anyway — so you find out after
@@ -2956,25 +3131,21 @@
       return;
     }
 
-    const live = tasks.filter(t => t.position != null && !t.hidden).length;
-    if (wanted !== 'free' && !live) {
-      alert('Activate at least one task first — this mode would leave participants with nothing to do.');
-      return;
-    }
-
     const prev = studyMode;
     studyMode = wanted;
     renderModePicker();
-    const { error } = await supabaseClient
+    // .select() so a policy that filters the row out reads as a failure,
+    // not as the silent success a bare update would report.
+    const { data, error } = await supabaseClient
       .from('study_settings').update({ mode: wanted, updated_at: new Date().toISOString() })
-      .eq('app', currentApp);
-    if (error) {
+      .eq('app', currentApp).select('app');
+    if (error || !data || !data.length) {
       studyMode = prev;
       renderModePicker();
-      document.getElementById('task-list').insertAdjacentHTML('afterbegin',
-        `<div class="error-box">Couldn't change the mode: ${error.message}</div>`);
+      document.getElementById('journey').insertAdjacentHTML('afterbegin',
+        `<div class="error-box">Couldn't change the mode: ${error ? error.message : 'no settings row was updated'}</div>`);
     }
-  });
+  }
 
   // Sequence first, then drafts, then hidden. Shared so the list, the
   // summary and the results stepper cannot disagree about what "next" is.
@@ -3150,12 +3321,19 @@
     // Only route tasks have behaviour to show: a question screen records
     // no clicks or gaze by design.
     let behaviour = '';
-    if (kind === 'app_route' && rows.length && opts.withHeatmap !== false) {
+    const reached = kind === 'app_route' ? reachedScreens(t.task_id) : [];
+    if (kind === 'app_route' && rows.length && opts.withHeatmap !== false && !reached.length) {
+      behaviour = `
+        <div class="tr-behaviour">
+          <h4>Step by step, during this task</h4>
+          <div class="empty-note">No clicks, choices or gaze were recorded on any screen during this task.</div>
+        </div>`;
+    } else if (kind === 'app_route' && rows.length && opts.withHeatmap !== false) {
       const id = `tr-heat-${++heatSeq}`;
       // Only offer the layer toggle when there is something to toggle to.
       // A Gaze button that can only ever say "nothing recorded" is a
       // control that exists to disappoint.
-      const hasGaze = STEPS.some(st => taskGaze(t.task_id, st).length);
+      const hasGaze = reached.some(st => taskGaze(t.task_id, st).length);
       const layerToggle = hasGaze ? `
             <span style="flex:1"></span>
             <button class="heatmap-tab active" data-heat-layer="clicks">Clicks</button>
@@ -3165,12 +3343,12 @@
         <div class="tr-behaviour" data-heat="${id}" data-task="${t.task_id}">
           <h4>Step by step, during this task</h4>
           <div class="tr-heat-tabs">
-            ${STEPS.map((st, i) => `<button class="heatmap-tab${i === 0 ? ' active' : ''}" data-heat-step="${st}">${st}</button>`).join('')}
+            ${reached.map((st, i) => `<button class="heatmap-tab${i === 0 ? ' active' : ''}" data-heat-step="${st}">${screenLabel(st)}</button>`).join('')}
             ${layerToggle}
           </div>
-          <div id="${id}-stats">${taskStepPanel(t.task_id, STEPS[0])}</div>
+          <div id="${id}-stats">${taskStepPanel(t.task_id, reached[0])}</div>
           <div class="tr-heat-wrap">
-            <iframe id="${id}-frame" src="${previewSrc(STEPS[0] || '')}" tabindex="-1" title="Screen preview"></iframe>
+            <iframe id="${id}-frame" src="${previewSrc(reached[0], previewCtx(t.path, reached[0]))}" tabindex="-1" title="Screen preview"></iframe>
             <canvas id="${id}-canvas"></canvas>
           </div>
           <div class="tr-heat-legend" id="${id}-legend"></div>
@@ -3192,6 +3370,20 @@
         ${behaviour}
         ${opts.extra ? `<div class="tr-behaviour">${opts.extra}</div>` : ''}
       </div>`;
+  }
+
+  // The screens anyone actually reached during one task, in the app's own
+  // screen order. A tab for a screen nobody saw can only ever say "nothing
+  // here", and a row of those buries the few that matter. Reaching means
+  // anything recorded on it while the task ran: a click, a choice or gaze.
+  function reachedScreens(taskId) {
+    const seen = new Set();
+    taskCohort().forEach(s => {
+      ['clicks', 'selections', 'gaze'].forEach(k => (s[k] || []).forEach(r => {
+        if (r.task_id === taskId) seen.add(r.step);
+      }));
+    });
+    return STEPS.filter(st => seen.has(st));
   }
 
   // Clicks made during one task, on one screen. Rows predating the task_id
@@ -3265,16 +3457,19 @@
   // between screens with tabs; a printed page has no tabs, so the summary
   // lays them out side by side instead.
   function miniHeatRow(t, layer) {
-    const has = STEPS.some(st => (layer === 'gaze' ? taskGaze : taskClicks)(t.task_id, st).length);
-    if (!has) return '';
-    const cells = STEPS.map(st => {
+    // Only screens with something on this layer: a grid of empty previews
+    // reads as "nobody went there", which is true, but says it ten times.
+    const of = layer === 'gaze' ? taskGaze : taskClicks;
+    const screens = STEPS.filter(st => of(t.task_id, st).length);
+    if (!screens.length) return '';
+    const cells = screens.map(st => {
       const id = `tr-mini-${++heatSeq}`;
       return `
         <div class="tr-mini" data-mini="${id}" data-task="${t.task_id}"
              data-step="${st}" data-layer="${layer}">
-          <div class="tr-mini-label">${st}</div>
+          <div class="tr-mini-label">${screenLabel(st)}</div>
           <div class="tr-mini-wrap">
-            <iframe id="${id}-frame" src="${previewSrc(st)}" tabindex="-1" title="${st} screen"></iframe>
+            <iframe id="${id}-frame" src="${previewSrc(st, previewCtx(t.path, st))}" tabindex="-1" title="${st} screen"></iframe>
             <canvas id="${id}-canvas"></canvas>
           </div>
           <div class="tr-mini-note" id="${id}-legend"></div>
@@ -3330,7 +3525,7 @@
           // than no panel at all.
           paintStats();
           // Changing the screen reloads the preview, whose load redraws.
-          frame.src = previewSrc(step.dataset.heatStep);
+          frame.src = previewSrc(step.dataset.heatStep, previewCtx(taskPath(taskId), step.dataset.heatStep));
           return;
         }
         const layer = e.target.closest('[data-heat-layer]');
@@ -3920,10 +4115,14 @@
   // asked to do something is a fact you want visible from the Results view.
   function renderTaskTabFlag() {
     const tab = document.querySelector('.main-tab[data-view="tasks"]');
-    const n = tasks.filter(t => t.position != null).length;
+    const n = tasks.filter(t => t.position != null && !t.hidden).length;
     // "In sequence" was internal vocabulary. What you want at a glance is
-    // how many things a participant is actually asked to do.
-    tab.innerHTML = 'Tasks' + (n ? `<span class="tab-flag">${n} live</span>` : '');
+    // how many things a participant is actually asked to do — and that is
+    // nothing at all when the Tasks stage is switched off, whatever the
+    // list still holds.
+    const off = studyMode === 'free';
+    const flag = off ? 'off' : (n ? `${n} live` : '');
+    tab.innerHTML = 'Tasks' + (flag ? `<span class="tab-flag${off ? ' off' : ''}">${flag}</span>` : '');
   }
 
   function renderAuthoredPath() {
@@ -3949,7 +4148,7 @@
         <input type="checkbox" data-i="${i}" ${p.binding && !skipped ? 'checked' : ''} ${skipped ? 'disabled' : ''}
           title="${skipped ? 'Skipped — before the start, cannot be bound' : 'Must match to count as success'}">
         <span class="path-step-screen">
-          <span class="path-thumb"><iframe src="${previewSrc(p.step)}" tabindex="-1" title="${p.step} screen"></iframe></span>
+          <button type="button" class="path-thumb" data-zoom="${p.step}" data-zoom-src="${escAttr(previewSrc(p.step, previewCtx(authoredPath, p.step)))}" title="Show this screen full size"><iframe src="${escAttr(previewSrc(p.step, previewCtx(authoredPath, p.step)))}" tabindex="-1" title="${p.step} screen"></iframe></button>
           <span class="path-step-name">${p.step}${skipped ? '<span class="skip-flag">skipped</span>' : ''}</span>
         </span>
         <span class="path-step-value">${p.value}</span>
@@ -4423,7 +4622,6 @@
     renderAuthoredPath();
     document.getElementById('task-name').value = '';
     document.getElementById('task-goal').value = '';
-    document.getElementById('task-gaze').checked = false;
     document.getElementById('author-error').innerHTML = '';
     document.getElementById('task-author').hidden = false;
     document.getElementById('tasks-panel').classList.add('authoring');
@@ -4444,7 +4642,6 @@
     authoringKind = null;
   });
 
-  document.getElementById('new-task-btn').addEventListener('click', openAuthoring);
   document.getElementById('cancel-task-btn').addEventListener('click', closeAuthoring);
 
   document.getElementById('save-task-btn').addEventListener('click', async () => {
@@ -4466,7 +4663,10 @@
     const entry = authoredPath.find(p => p.step === entryStep);
     const row = {
       task_id: crypto.randomUUID(), app: currentApp, name, goal_text: goal, kind: 'app_route',
-      path: authoredPath.map(({ step, value }) => ({ step, value })),
+      // Each step keeps the app's snapshot from arriving there, so every
+      // preview of this task — thumbnails, heatmaps — shows the screen the
+      // author actually saw (Tamar's page, not Noa's).
+      path: authoredPath.map(({ step, value, state }) => (state ? { step, value, state } : { step, value })),
       binding, entry_step: entryStep, position: nextPosition(),
       // What the app looked like on arrival at the start step, so a task
       // beginning partway into a flow restores the author's picks instead
@@ -4474,9 +4674,6 @@
       // there is nothing before it to restore.
       entry_state: entry && authoredPath.indexOf(entry) > 0 ? entry.state : null
     };
-    // Only sent when on, so a task without eye tracking still saves
-    // against a database that has not had the gaze migration yet.
-    if (document.getElementById('task-gaze').checked) row.gaze = true;
     const { error } = await supabaseClient.from('tasks').insert(row);
     btn.disabled = false;
 
@@ -4498,11 +4695,7 @@
       return;
     }
     tasks = data || [];
-    renderTaskTabFlag();
-    if (!tasks.length) {
-      list.innerHTML = '<div class="empty-note">No tasks yet. Define one to give participants a goal.</div>';
-      return;
-    }
+    renderModePicker();
 
     // Participants work through the sequence in order. A task with no
     // position exists but isn't being asked — a draft, or one retired from
@@ -4516,125 +4709,102 @@
     const escRow = x => String(x).replace(/[&<>"]/g,
       ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
-    // A row has to say what it is at a glance: a battery mixes route tasks
-    // with questions, and they are scored in completely different ways.
-    // Route tasks render as a chip chain — each step's role (must match /
-    // free / skipped) is a colour on its own chip, not a word repeated
-    // after every arrow in one long line of text.
-    const describe = t => {
+    // One line per task, in words. The route with its screens, a
+    // question's choices and every setting live behind Details — the row
+    // only has to say what kind of thing this is and the one or two facts
+    // that tell it apart from its neighbours.
+    const summary = t => {
       const kind = t.kind || 'app_route';
-      const tag = `<span class="task-kind-tag">${(TASK_KINDS[kind] || {}).label || kind}</span>`;
       const c = t.config || {};
+      const label = (TASK_KINDS[kind] || {}).label || kind;
+      const required = c.required === false ? 'optional' : 'answer required';
 
+      if (kind === 'app_route') {
+        const path = t.path || [];
+        const bound = (t.binding || []).length;
+        const start = t.entry_step || (path[0] && path[0].step);
+        const bits = [label, `${path.length} step${path.length === 1 ? '' : 's'}`,
+                      bound === path.length ? 'exact path' : `${bound} must match`];
+        if (start) bits.push(`starts at ${screenLabel(start)}`);
+        return bits.join(' · ');
+      }
+      if (kind === 'yes_no') {
+        return [`${label} question`, c.display === 'emotions' ? 'shown as 🙂 / 🙁' : 'shown as ✓ / ✕',
+                required].join(' · ');
+      }
       if (kind === 'multiple_choice') {
         const n = (c.choices || []).length;
-        const bits = [`${n} choice${n === 1 ? '' : 's'}`,
+        const bits = [label, `${n} choice${n === 1 ? '' : 's'}`,
                       c.select === 'multi' ? 'pick several' : 'pick one'];
-        if (c.other) bits.push("'other'");
-        if (c.opt_out) bits.push("'opt out'");
         if (c.shuffle) bits.push('shuffled');
-        return `${tag} <span class="task-meta-text">${bits.join(' · ')}</span>`;
+        return [...bits, required].join(' · ');
       }
-
-      if (kind === 'yes_no') {
-        return `${tag} <span class="task-meta-text">${c.display === 'emotions' ? 'faces' : 'icons'}</span>`;
-      }
-
-      if (kind === 'simple_input') {
-        return `${tag} <span class="task-meta-text">${c.input_type || 'text'} answer</span>`;
-      }
-
-      if (kind === 'matrix') {
-        const st = (c.statements || []).length, ch = (c.choices || []).length;
-        const bits = [`${st} statement${st === 1 ? '' : 's'}`, `${ch} choice${ch === 1 ? '' : 's'}`,
-                      c.select === 'multi' ? 'pick several' : 'pick one'];
-        if (c.opt_out) bits.push("'opt out'");
-        return `${tag} <span class="task-meta-text">${bits.join(' · ')}</span>`;
-      }
-
       if (kind === 'opinion_scale') {
         const lo = c.start_at_one === false ? 0 : 1;
-        return `${tag} <span class="task-meta-text">${c.display || 'number'} · `
-             + `${lo}–${(c.steps || 10) - (lo === 0 ? 1 : 0)}</span>`;
+        return [label, c.display || 'number', `${lo}–${(c.steps || 10) - (lo === 0 ? 1 : 0)}`, required].join(' · ');
       }
-
-      const entryIdx = t.entry_step ? (t.path || []).findIndex(p => p.step === t.entry_step) : 0;
-      const chips = (t.path || []).map((p, i) => {
-        const skipped = entryIdx > 0 && i < entryIdx;
-        const bound = !skipped && (t.binding || []).includes(p.step);
-        return `<span class="route-chip${skipped ? ' skipped' : bound ? ' bound' : ''}">${escRow(p.value)}</span>`;
-      }).join('<span class="route-arrow">→</span>');
-      const scoring = (t.binding || []).length === (t.path || []).length
-        ? 'exact path' : `goal · ${(t.binding || []).join(', ')} must match`;
-      return `<div class="route-chips">${tag}${chips}</div>`
-           + `<span class="task-meta-text">${scoring}${entryNote(t)}</span>`
-           // Switchable after answers exist, unlike the task's content: it
-           // changes what is measured from now on, not what the task asks,
-           // so no existing answer is reinterpreted by it.
-           + ` <button class="gaze-chip${t.gaze ? ' on' : ''}" data-gaze="${t.task_id}"
-                 title="${t.gaze ? 'Eye tracking is on for this task — click to turn off' : 'Eye tracking is off for this task — click to turn on'}">`
-           + `${t.gaze ? '● Eye tracking on' : '○ Eye tracking off'}</button>`;
+      if (kind === 'matrix') {
+        const st = (c.statements || []).length, ch = (c.choices || []).length;
+        return [label, `${st} statement${st === 1 ? '' : 's'}`, `${ch} choice${ch === 1 ? '' : 's'}`,
+                required].join(' · ');
+      }
+      if (kind === 'simple_input') return [label, `${c.input_type || 'text'} answer`, required].join(' · ');
+      return label;
     };
 
-    // One row template for all three lists (in sequence, not in sequence,
-    // hidden) — they differed only in which action buttons they offered,
-    // which does not justify three copies of the same markup to keep in
-    // step whenever the row itself changes.
-    const taskRow = (t, { seq, draggable, actions, dim } = {}) => `
-      <div class="task-row${draggable ? ' active' : ''}"${draggable ? ` draggable="true" data-seq-id="${t.task_id}"` : ''}
-           ${dim ? 'style="opacity:0.7"' : ''}>
-        <div class="task-row-head">
-          ${draggable ? '<span class="task-grip" title="Drag to reorder">⠿</span>' : ''}
-          ${seq != null ? `<span class="task-seq">${seq}</span>` : ''}
-          <span class="task-icon">${taskIcon(t.kind)}</span>
-          <span class="task-name">${escRow(t.name)}</span>
-          <span class="task-actions">
-            <button class="task-expand" data-expand="${t.task_id}" aria-expanded="false"
-              title="Show what this task asks">&#9662;</button>
+    // Every action on the row itself. There are at most four, and a ⋯
+    // menu holding one or two of them only hid them. The ones that change
+    // where a task stands are drawn quieter than Details and Results.
+    const taskRow = (t, { seq, live, actions, dim } = {}) => `
+      <div class="task-row${live ? ' live' : ''}${dim ? ' dim' : ''}"${live ? ` draggable="true" data-seq-id="${t.task_id}"` : ''}>
+        <div class="task-line">
+          <span class="task-grip"${live ? ' title="Drag to reorder"' : ''}>${live ? '⋮⋮' : ''}</span>
+          <span class="task-seq">${seq != null ? seq : ''}</span>
+          <div class="task-main">
+            <span class="task-name">${escRow(t.name)}</span>
+            <span class="task-sum">${escRow(summary(t))}</span>
+          </div>
+          <div class="task-actions">
+            <button type="button" class="task-btn" data-expand="${t.task_id}" aria-expanded="false">Details</button>
+            <button type="button" class="task-btn primary" data-results="${t.task_id}">Results</button>
             ${actions}
-          </span>
+          </div>
         </div>
-        <div class="task-row-meta">${describe(t)}</div>
-      </div>
-      <div class="task-detail-panel" data-panel="${t.task_id}" hidden>${taskDetails(t)}</div>`;
+        <div class="task-detail-panel" data-panel="${t.task_id}" hidden>${taskDetails(t)}</div>
+      </div>`;
 
-    const banner = inSeq.length
-      ? `<div class="task-status">Participants work through <b>${inSeq.length} task${inSeq.length > 1 ? 's' : ''}</b>, in order.</div>`
-      : `<div class="task-status muted">No tasks in the sequence — participants use the flow freely.</div>`;
-
-    const seqRows = inSeq.map((t, i) => taskRow(t, {
-      seq: i + 1, draggable: true,
-      actions: `<button class="task-btn primary" data-results="${t.task_id}">Results</button>
-        <button class="task-btn" data-remove="${t.task_id}"
-          title="Stops participants being asked this. Nothing is deleted.">Deactivate</button>`
+    const liveRows = inSeq.map((t, i) => taskRow(t, {
+      seq: i + 1, live: true,
+      actions: `<button type="button" class="task-btn quiet" data-remove="${t.task_id}"
+               title="Stops participants being asked this. Nothing is deleted.">Deactivate</button>`
     })).join('');
 
-    const outRows = outSeq.length ? `
-      <h3 class="task-subhead">Not in the sequence</h3>` + outSeq.map(t => taskRow(t, {
-      actions: `<button class="task-btn primary" data-results="${t.task_id}">Results</button>
-        <button class="task-btn" data-add="${t.task_id}">Activate</button>
-        <button class="task-btn" data-hide="${t.task_id}"
-          title="Files it away. Its answers are kept and it can be restored.">Hide</button>`
-    })).join('') : '';
+    const define = `<button type="button" class="task-define" data-define>+ Define a task</button>`;
 
-    // Hidden tasks are out of the way but never out of reach: the toggle
-    // says how many there are, so nothing is silently missing.
-    const hiddenToggle = hidden.length ? `
-      <button class="signout-btn" id="toggle-hidden" style="margin-top:18px">
-        ${showHidden ? 'Hide' : 'Show'} hidden tasks (${hidden.length})
-      </button>` : '';
-
-    const hiddenRows = (showHidden && hidden.length) ? `
-      <h3 class="task-subhead">Hidden</h3>` + hidden.map(t => taskRow(t, {
+    // Inactive and hidden tasks are out of the way but never out of reach:
+    // each toggle says how many there are, so nothing is silently missing.
+    const inactiveRows = outSeq.map(t => taskRow(t, {
       dim: true,
-      actions: `<button class="task-btn primary" data-results="${t.task_id}">Results</button>
-        <button class="task-btn" data-unhide="${t.task_id}">Restore</button>`
-    })).join('') : '';
+      actions: `<button type="button" class="task-btn quiet" data-add="${t.task_id}">Activate</button>
+             <button type="button" class="task-btn quiet" data-hide="${t.task_id}"
+               title="Files it away. Its answers are kept and it can be restored.">Hide</button>`
+    })).join('');
+    const hiddenRows = hidden.map(t => taskRow(t, {
+      dim: true,
+      actions: `<button type="button" class="task-btn quiet" data-unhide="${t.task_id}">Restore</button>`
+    })).join('');
 
-    list.innerHTML = banner + seqRows + outRows + hiddenToggle + hiddenRows;
+    const more = (outSeq.length || hidden.length) ? `
+      <div class="task-more-groups">
+        ${outSeq.length ? `<button type="button" class="task-group-toggle" data-toggle-inactive aria-expanded="${showInactive}">
+            ${showInactive ? '▾' : '▸'} Inactive (${outSeq.length})</button>
+          ${showInactive ? `<div class="task-group">${inactiveRows}</div>` : ''}` : ''}
+        ${hidden.length ? `<button type="button" class="task-group-toggle" data-toggle-hidden aria-expanded="${showHidden}">
+            ${showHidden ? '▾' : '▸'} Hidden (${hidden.length})</button>
+          ${showHidden ? `<div class="task-group">${hiddenRows}</div>` : ''}` : ''}
+      </div>` : '';
 
-    const tgl = document.getElementById('toggle-hidden');
-    if (tgl) tgl.addEventListener('click', () => { showHidden = !showHidden; loadTasks(); });
+    list.innerHTML = `<div class="task-live">${liveRows}</div>` + define + more;
 
     wireDragReorder(list);
   }
@@ -4727,6 +4897,7 @@
   // Offered only on tasks out of the sequence, so retiring something in
   // front of participants stays a deliberate two-step.
   let showHidden = false;
+  let showInactive = false;
 
   async function setHidden(taskId, hidden) {
     const { error } = await supabaseClient.from('tasks')
@@ -4751,31 +4922,16 @@
   }
 
   document.getElementById('task-list').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-define]')) { openAuthoring(); return; }
+    if (e.target.closest('[data-toggle-inactive]')) { showInactive = !showInactive; loadTasks(); return; }
+    if (e.target.closest('[data-toggle-hidden]')) { showHidden = !showHidden; loadTasks(); return; }
+
     const expand = e.target.closest('[data-expand]');
     if (expand) {
       const panel = document.querySelector(`[data-panel="${expand.dataset.expand}"]`);
       const open = panel.hidden;
       panel.hidden = !open;
       expand.setAttribute('aria-expanded', String(open));
-      expand.innerHTML = open ? '&#9652;' : '&#9662;';
-      return;
-    }
-
-    const gz = e.target.closest('[data-gaze]');
-    if (gz) {
-      const t = tasks.find(x => x.task_id === gz.dataset.gaze);
-      if (!t) return;
-      gz.disabled = true;
-      const { data, error } = await supabaseClient.from('tasks')
-        .update({ gaze: !t.gaze }).eq('task_id', t.task_id).select('task_id');
-      if (error || !data || !data.length) {
-        gz.disabled = false;
-        document.getElementById('task-list').insertAdjacentHTML('afterbegin', `<div class="error-box">Couldn't change eye tracking: `
-          + `${error ? error.message : 'no task was updated'}`
-          + `${error && /gaze/.test(error.message) ? ' — run supabase_migration_gaze_and_entry_state.sql first.' : ''}</div>`);
-        return;
-      }
-      loadTasks();
       return;
     }
 
@@ -4892,6 +5048,38 @@
     } else {
       showLogin();
     }
+  })();
+</script>
+<!-- One full-size screen, opened from any thumbnail. A preview frame:
+     it renders the screen and records nothing. -->
+<div class="zoom-overlay" id="zoom-overlay" hidden>
+  <div class="zoom-card" role="dialog" aria-modal="true" aria-labelledby="zoom-title">
+    <div class="zoom-head">
+      <b id="zoom-title"></b>
+      <button type="button" class="zoom-close" id="zoom-close" aria-label="Close">&times;</button>
+    </div>
+    <iframe id="zoom-frame" title="Screen preview"></iframe>
+  </div>
+</div>
+<script>
+  (function () {
+    const overlay = document.getElementById('zoom-overlay');
+    const frame = document.getElementById('zoom-frame');
+    const close = () => { overlay.hidden = true; frame.src = 'about:blank'; };
+    // Delegated, because thumbnails are redrawn every time a list or a
+    // route renders.
+    document.addEventListener('click', (e) => {
+      const thumb = e.target.closest('[data-zoom]');
+      if (!thumb) return;
+      e.preventDefault();
+      const step = thumb.dataset.zoom;
+      document.getElementById('zoom-title').textContent = screenLabel(step);
+      frame.src = thumb.dataset.zoomSrc || previewSrc(step);
+      overlay.hidden = false;
+    });
+    document.getElementById('zoom-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.hidden) close(); });
   })();
 </script>
 </body>
